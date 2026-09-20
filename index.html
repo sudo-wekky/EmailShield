@@ -1,0 +1,3105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EmailShield — phishing email analyser</title>
+<meta name="description" content="Upload a suspicious .eml file and get an explainable 0-100 risk score. Runs entirely in your browser; nothing is uploaded and no link is ever opened.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ------------------------------------------------------------------ tokens */
+:root {
+  --paper:        #f4f6f8;
+  --surface:      #ffffff;
+  --surface-sunk: #eef1f5;
+  --ink:          #16202b;
+  --muted:        #5c6b7c;
+  --line:         #dde3ea;
+  --line-strong:  #b9c3cf;
+  --accent:       #1b4d8f;
+  --accent-dark:  #143a6b;
+  --accent-soft:  #e8eff8;
+
+  --low-ink:   #166b4a;  --low-bg:   #e6f3ec;
+  --susp-ink:  #8a6100;  --susp-bg:  #fbf1dc;
+  --high-ink:  #b04a1a;  --high-bg:  #fbeadf;
+  --crit-ink:  #8e1b2b;  --crit-bg:  #fbe6e9;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --shell: 1080px;
+  --radius: 4px;
+  --shadow: 0 1px 2px rgba(22, 32, 43, .06), 0 4px 16px rgba(22, 32, 43, .05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:        #11161c;
+    --surface:      #171e26;
+    --surface-sunk: #1e2730;
+    --ink:          #e6ecf3;
+    --muted:        #97a5b5;
+    --line:         #27323d;
+    --line-strong:  #3b4957;
+    --accent:       #6fa3e0;
+    --accent-dark:  #8fbbef;
+    --accent-soft:  #1a2836;
+
+    --low-ink:   #5fc79b;  --low-bg:   #12291f;
+    --susp-ink:  #e0b356;  --susp-bg:  #2b2314;
+    --high-ink:  #ef9a6a;  --high-bg:  #2e1d13;
+    --crit-ink:  #f08b9b;  --crit-bg:  #2e151b;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:        #11161c;
+  --surface:      #171e26;
+  --surface-sunk: #1e2730;
+  --ink:          #e6ecf3;
+  --muted:        #97a5b5;
+  --line:         #27323d;
+  --line-strong:  #3b4957;
+  --accent:       #6fa3e0;
+  --accent-dark:  #8fbbef;
+  --accent-soft:  #1a2836;
+
+  --low-ink:   #5fc79b;  --low-bg:   #12291f;
+  --susp-ink:  #e0b356;  --susp-bg:  #2b2314;
+  --high-ink:  #ef9a6a;  --high-bg:  #2e1d13;
+  --crit-ink:  #f08b9b;  --crit-bg:  #2e151b;
+
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+}
+
+/* ------------------------------------------------------------------- base */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { line-height: 1.25; margin: 0 0 .5em; font-weight: 600; letter-spacing: -.011em; }
+h1 { font-size: clamp(1.9rem, 4.2vw, 2.6rem); }
+h2 { font-size: clamp(1.3rem, 2.6vw, 1.6rem); }
+h3 { font-size: 1.05rem; }
+p { margin: 0 0 1em; }
+p:last-child { margin-bottom: 0; }
+a { color: var(--accent); text-underline-offset: .15em; }
+a:hover { color: var(--accent-dark); }
+code, kbd, samp { font-family: var(--mono); font-size: .875em; }
+img, svg { max-width: 100%; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+.skip {
+  position: absolute; left: -9999px; top: 0; z-index: 50;
+  background: var(--accent); color: #fff; padding: 10px 16px; text-decoration: none;
+}
+.skip:focus { left: 0; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.muted { color: var(--muted); }
+.spaced { margin-top: 14px; }
+.spaced-sm { margin-top: 12px; }
+.spaced-lg { margin-top: 18px; }
+.mono { font-family: var(--mono); font-size: .85em; word-break: break-word; }
+.nowrap { white-space: nowrap; }
+
+.wrap { max-width: var(--shell); margin: 0 auto; padding: 0 20px; }
+.narrow { max-width: 760px; }
+
+/* ---------------------------------------------------------------- topbar */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: var(--shell); margin: 0 auto; padding: 12px 20px;
+  display: flex; align-items: center; gap: 20px;
+}
+.wordmark {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-weight: 600; font-size: 1.02rem; color: var(--ink); text-decoration: none;
+  letter-spacing: -.01em;
+}
+.topnav { display: flex; gap: 20px; margin-left: auto; font-size: .9rem; }
+.topnav a { color: var(--muted); text-decoration: none; }
+.topnav a:hover { color: var(--ink); }
+@media (max-width: 720px) { .topnav { display: none; } }
+
+.theme-toggle {
+  margin-left: auto; background: none; border: 1px solid var(--line-strong);
+  color: var(--muted); border-radius: var(--radius); padding: 6px 10px;
+  font: inherit; font-size: .8rem; cursor: pointer; line-height: 1;
+}
+.topnav + .theme-toggle { margin-left: 0; }
+.theme-toggle:hover { color: var(--ink); border-color: var(--accent); }
+
+/* ------------------------------------------------------------------- hero */
+.hero { padding: 64px 0 40px; }
+.eyebrow {
+  font-family: var(--mono); font-size: .74rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+}
+.hero p.lede { font-size: 1.12rem; color: var(--muted); max-width: 62ch; }
+.hero-points {
+  display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 22px; padding: 0; list-style: none;
+}
+.hero-points li {
+  font-size: .82rem; color: var(--muted); font-family: var(--mono);
+  border: 1px solid var(--line); border-radius: 100px; padding: 5px 12px;
+  background: var(--surface);
+}
+
+/* ------------------------------------------------------------------ parts */
+.section { padding: 48px 0; border-top: 1px solid var(--line); }
+.section-head { margin-bottom: 26px; }
+.section-head p { color: var(--muted); max-width: 66ch; margin-bottom: 0; }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 22px;
+}
+.panel + .panel { margin-top: 18px; }
+.panel > :last-child { margin-bottom: 0; }
+.panel-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.panel-head h2, .panel-head h3 { margin: 0; }
+.panel-head .note { color: var(--muted); font-size: .82rem; font-family: var(--mono); }
+
+.btn {
+  display: inline-block; border: 1px solid var(--accent); background: var(--accent);
+  color: #fff; font: 500 .95rem/1 var(--sans); padding: 11px 18px;
+  border-radius: var(--radius); cursor: pointer; text-decoration: none;
+}
+.btn:hover { background: var(--accent-dark); border-color: var(--accent-dark); color: #fff; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+.btn-secondary:hover { background: var(--surface-sunk); color: var(--ink); border-color: var(--line-strong); }
+.btn-sm { padding: 7px 12px; font-size: .84rem; }
+
+.notice {
+  border: 1px solid var(--line-strong); border-left: 3px solid var(--line-strong);
+  background: var(--surface-sunk); padding: 12px 16px; border-radius: var(--radius);
+  color: var(--muted); font-size: .9rem;
+}
+.alert {
+  border: 1px solid var(--crit-ink); border-left-width: 3px;
+  background: var(--crit-bg); color: var(--crit-ink);
+  padding: 12px 16px; border-radius: var(--radius); margin-bottom: 18px; font-size: .92rem;
+}
+
+/* -------------------------------------------------------------- dropzone */
+.dropzone {
+  border: 1.5px dashed var(--line-strong); border-radius: var(--radius);
+  padding: 40px 22px; text-align: center; background: var(--surface);
+  transition: border-color .15s, background .15s;
+}
+.dropzone.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone p { margin: 0 auto 6px; max-width: 46ch; }
+.dropzone .hint { color: var(--muted); font-size: .85rem; }
+.dropzone .or { color: var(--muted); font-size: .8rem; margin: 16px auto; font-family: var(--mono); }
+.dropzone input[type="file"] {
+  position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden;
+}
+.file-label {
+  display: inline-block; background: var(--accent); color: #fff; padding: 11px 18px;
+  border-radius: var(--radius); cursor: pointer; font-weight: 500; font-size: .95rem;
+}
+.file-label:hover { background: var(--accent-dark); }
+.dropzone input[type="file"]:focus-visible + .file-label {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.chosen { margin-top: 18px; font-size: .88rem; min-height: 1.4em; }
+
+.samples { margin-top: 18px; }
+.samples-label { font-size: .84rem; color: var(--muted); margin-bottom: 10px; }
+.sample-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sample-btn {
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  border-radius: var(--radius); padding: 8px 12px; font: inherit; font-size: .84rem;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.sample-btn:hover { border-color: var(--accent); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--band-ink, var(--muted)); }
+
+/* -------------------------------------------------------------- verdict */
+.band-low         { --band-ink: var(--low-ink);  --band-bg: var(--low-bg); }
+.band-suspicious  { --band-ink: var(--susp-ink); --band-bg: var(--susp-bg); }
+.band-high        { --band-ink: var(--high-ink); --band-bg: var(--high-bg); }
+.band-critical    { --band-ink: var(--crit-ink); --band-bg: var(--crit-bg); }
+
+.band-tag {
+  display: inline-block; font-family: var(--mono); font-size: .72rem;
+  text-transform: uppercase; letter-spacing: .06em; padding: 3px 8px;
+  border-radius: 3px; background: var(--band-bg); color: var(--band-ink);
+  border: 1px solid color-mix(in srgb, var(--band-ink) 30%, transparent);
+  white-space: nowrap;
+}
+
+#report { display: none; scroll-margin-top: 80px; }
+#report.is-visible { display: block; }
+
+.verdict {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 4px solid var(--band-ink); border-radius: var(--radius);
+  padding: 26px; box-shadow: var(--shadow);
+}
+.verdict-top { display: flex; gap: 30px; align-items: flex-start; flex-wrap: wrap; }
+.verdict-score { flex: 0 0 auto; }
+.verdict-score .value {
+  font: 600 62px/1 var(--sans); color: var(--band-ink);
+  font-variant-numeric: tabular-nums; letter-spacing: -.03em;
+}
+.verdict-score .of { font-size: 22px; color: var(--muted); font-weight: 400; }
+.verdict-score .caption { font-size: .72rem; color: var(--muted); margin-top: 6px; font-family: var(--mono); }
+.verdict-main { flex: 1 1 340px; min-width: 260px; }
+.verdict-main h2 { font-size: 1.5rem; color: var(--band-ink); margin-bottom: 8px; }
+.verdict-main p { margin-bottom: 0; }
+
+.meter { margin-top: 22px; }
+.meter svg { display: block; width: 100%; max-width: 520px; height: auto; }
+.meter-note { font-size: .78rem; color: var(--muted); margin-top: 8px; }
+
+.action-block {
+  margin-top: 20px; padding: 14px 16px; background: var(--band-bg);
+  border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--band-ink) 25%, transparent);
+}
+.action-block h3 { font-size: .78rem; margin-bottom: 4px; color: var(--band-ink);
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+.action-block p { margin: 0; font-size: .93rem; }
+
+/* ------------------------------------------------------------- findings */
+.findings { list-style: none; margin: 0; padding: 0; }
+.findings li {
+  border-left: 3px solid var(--sev-ink); background: var(--surface-sunk);
+  padding: 14px 16px; border-radius: 0 var(--radius) var(--radius) 0;
+}
+.findings li + li { margin-top: 10px; }
+.sev-high   { --sev-ink: var(--crit-ink); }
+.sev-medium { --sev-ink: var(--high-ink); }
+.sev-low    { --sev-ink: var(--susp-ink); }
+.sev-info   { --sev-ink: var(--line-strong); }
+
+.finding-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.finding-head h3 { margin: 0; font-size: .98rem; flex: 1 1 auto; }
+.sev-tag {
+  font-family: var(--mono); font-size: .68rem; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--sev-ink);
+}
+.points {
+  font-family: var(--mono); font-size: .82rem; font-weight: 500;
+  color: var(--sev-ink); font-variant-numeric: tabular-nums;
+}
+.finding-detail { margin: 9px 0 0; font-size: .93rem; }
+.why {
+  margin: 9px 0 0; font-size: .87rem; color: var(--muted);
+  padding-top: 9px; border-top: 1px solid var(--line);
+}
+.why b { color: var(--ink); font-weight: 600; }
+.evidence { margin: 11px 0 0; padding: 0; list-style: none; }
+.evidence li {
+  border: none; border-left: 2px solid var(--line-strong); border-radius: 0;
+  background: var(--surface); margin: 0 0 4px; padding: 6px 10px;
+  font-family: var(--mono); font-size: .76rem; word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- tables */
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+.table-scroll table { min-width: 540px; }
+caption { text-align: left; color: var(--muted); font-size: .82rem; padding-bottom: 8px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; font-size: .78rem; color: var(--muted); font-family: var(--mono);
+     text-transform: uppercase; letter-spacing: .05em; }
+tbody tr:last-child td { border-bottom: none; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; font-family: var(--mono); }
+
+dl.facts { margin: 0; display: grid; grid-template-columns: minmax(110px, 170px) 1fr; gap: 0 16px; }
+dl.facts dt { color: var(--muted); font-size: .8rem; padding: 7px 0; border-bottom: 1px solid var(--line); }
+dl.facts dd {
+  margin: 0; padding: 7px 0; font-family: var(--mono); font-size: .82rem;
+  word-break: break-word; border-bottom: 1px solid var(--line);
+}
+dl.facts dt:last-of-type, dl.facts dd:last-of-type { border-bottom: none; }
+
+.auth-row {
+  display: grid; grid-template-columns: 70px 90px 1fr; gap: 12px; align-items: baseline;
+  padding: 9px 0; border-bottom: 1px solid var(--line);
+}
+.auth-row:last-child { border-bottom: none; }
+.auth-row .check { font-weight: 600; font-size: .88rem; font-family: var(--mono); }
+.auth-row .meaning { color: var(--muted); font-size: .86rem; }
+.verdict-pass { color: var(--low-ink); }
+.verdict-fail { color: var(--crit-ink); }
+.verdict-warn { color: var(--susp-ink); }
+.verdict-none { color: var(--muted); }
+.auth-row .tag { font-family: var(--mono); font-size: .76rem; font-weight: 500; }
+@media (max-width: 620px) {
+  .auth-row { grid-template-columns: 70px 1fr; }
+  .auth-row .meaning { grid-column: 1 / -1; }
+}
+
+/* --------------------------------------------------------------- preview */
+.preview-frame {
+  width: 100%; height: 420px; border: 1px solid var(--line-strong);
+  border-radius: var(--radius); background: #fff;
+}
+.preview-note { font-size: .84rem; color: var(--muted); margin: 0 0 12px; }
+
+details.raw { margin-top: 16px; }
+details.raw > summary { cursor: pointer; font-size: .88rem; color: var(--accent); }
+details.raw > summary:hover { color: var(--accent-dark); }
+details.raw .table-scroll { margin-top: 12px; }
+
+/* ----------------------------------------------------------------- cards */
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 20px;
+}
+.card h3 { font-size: .98rem; margin-bottom: 8px; }
+.card p { font-size: .9rem; color: var(--muted); margin-bottom: 0; }
+.card .count {
+  font-family: var(--mono); font-size: .72rem; color: var(--accent);
+  letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8px;
+}
+
+.band-legend { display: grid; gap: 0; margin-top: 8px; }
+.band-legend .row {
+  display: grid; grid-template-columns: 92px 128px 1fr; gap: 14px; align-items: baseline;
+  padding: 10px 0; border-bottom: 1px solid var(--line);
+}
+.band-legend .row:last-child { border-bottom: none; }
+.band-legend .range { font-family: var(--mono); font-size: .84rem; color: var(--muted); }
+.band-legend .desc { font-size: .88rem; color: var(--muted); }
+@media (max-width: 620px) {
+  .band-legend .row { grid-template-columns: 80px 1fr; }
+  .band-legend .desc { grid-column: 1 / -1; }
+}
+
+.diagram-scroll {
+  overflow-x: auto; background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px;
+}
+/* The diagram is drawn as SVG rather than ASCII art: box-drawing characters
+   fall back to whatever font has the glyph, and its advance width rarely
+   matches the monospace around it, so the boxes come apart. */
+svg.diagram { display: block; width: 100%; min-width: 460px; max-width: 620px;
+               margin: 0 auto; height: auto; }
+
+ul.plain { list-style: none; margin: 0; padding: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--line); font-size: .92rem; }
+ul.plain li:last-child { border-bottom: none; }
+ul.plain b { font-weight: 600; }
+
+.history-row {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .88rem;
+}
+.history-row:last-child { border-bottom: none; }
+.history-row .name { flex: 1 1 180px; font-family: var(--mono); font-size: .82rem; }
+.history-row .when { color: var(--muted); font-size: .8rem; }
+.history-row .score { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+footer {
+  border-top: 1px solid var(--line); margin-top: 20px; padding: 32px 0 48px;
+  color: var(--muted); font-size: .85rem;
+}
+footer p { max-width: 70ch; }
+</style>
+</head>
+<body>
+<a class="skip" href="#analyser">Skip to the analyser</a>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="wordmark" href="#top">
+      <svg width="18" height="20" viewBox="0 0 16 18" aria-hidden="true">
+        <path d="M8 1 2 3.2v4.4c0 3.6 2.4 6.5 6 7.6 3.6-1.1 6-4 6-7.6V3.2Z"
+              fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M5.4 8.4 7.2 10.3l3.5-3.7" fill="none" stroke="currentColor"
+              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      EmailShield
+    </a>
+    <nav class="topnav" aria-label="Sections">
+      <a href="#analyser">Analyser</a>
+      <a href="#scoring">Scoring</a>
+      <a href="#detection">Detection</a>
+      <a href="#security">Security</a>
+      <a href="#limits">Limitations</a>
+    </nav>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch colour theme">Theme</button>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Phishing detection · runs in your browser</p>
+    <h1>Is this email trying to phish you?</h1>
+    <p class="lede">
+      Drop in a saved <code>.eml</code> message and EmailShield returns a risk score from 0 to 100,
+      together with every indicator that produced it and an explanation of why each one matters.
+      No link in the message is ever opened, no attachment is ever run, and nothing you upload
+      leaves this page.
+    </p>
+    <ul class="hero-points">
+      <li>44 detection rules</li>
+      <li>6 weighted categories</li>
+      <li>0 network requests</li>
+      <li>Explainable scoring</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================= ANALYSER -->
+<section class="section" id="analyser">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Check an email</h2>
+      <p>
+        Export the message from your mail client (Outlook: drag it to the desktop · Gmail:
+        ⋮ → Download message · Apple Mail: File → Save As → Raw Message Source), then drop
+        the file here. Parsing, analysis and rendering all happen locally in this tab.
+      </p>
+    </div>
+
+    <div id="error-slot" aria-live="polite"></div>
+
+    <div class="dropzone" id="dropzone">
+      <p><strong>Drop an email file here</strong></p>
+      <p class="hint">Accepted: .eml, .txt · analysed locally, never uploaded</p>
+      <p class="or">or</p>
+      <input type="file" id="file-input" accept=".eml,.txt,message/rfc822,text/plain">
+      <label class="file-label" for="file-input">Choose a file</label>
+      <p class="chosen" id="chosen" role="status" aria-live="polite"></p>
+    </div>
+
+    <div class="samples">
+      <p class="samples-label">No suspicious email to hand? Try one of these synthetic samples:</p>
+      <div class="sample-row" id="sample-row"></div>
+    </div>
+
+    <div id="report" tabindex="-1"></div>
+
+    <div class="panel" id="history-panel" hidden>
+      <div class="panel-head">
+        <h3>This session</h3>
+        <button class="btn btn-secondary btn-sm" type="button" id="clear-history">Clear</button>
+      </div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== SCORING -->
+<section class="section" id="scoring">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>How the score works</h2>
+      <p>
+        Every rule carries a fixed point value and a severity. Points are summed per category
+        and clamped to that category's cap, heaviest findings first, then the category subtotals
+        are summed and clamped to 100. That is why a message with eleven bad links cannot
+        outweigh everything else.
+      </p>
+    </div>
+
+    <div class="grid grid-3">
+      <div class="card">
+        <p class="count">Step 1</p>
+        <h3>Analyzers emit signals</h3>
+        <p>Five analyzers run over the parsed message. Each is a pure function with no network,
+           storage or filesystem access, so a crafted email cannot make one act on its behalf.</p>
+      </div>
+      <div class="card">
+        <p class="count">Step 2</p>
+        <h3>Categories are capped</h3>
+        <p>Sender 35 · Authentication 30 · Links 40 · Attachments 30 · Content 25 · Headers 15.
+           Language alone can never push a message past the Suspicious band.</p>
+      </div>
+      <div class="card">
+        <p class="count">Step 3</p>
+        <h3>The total is banded</h3>
+        <p>The capped total maps to one of four bands, each with a recommended action written
+           for a person deciding what to do next — not for a filter.</p>
+      </div>
+    </div>
+
+    <div class="panel spaced-lg">
+      <div class="panel-head">
+        <h3>Risk bands</h3>
+        <span class="note">a risk score, not a probability</span>
+      </div>
+      <div class="band-legend">
+        <div class="row band-low">
+          <span class="band-tag">Low Risk</span><span class="range">0 – 24</span>
+          <span class="desc">No major indicators found.</span>
+        </div>
+        <div class="row band-suspicious">
+          <span class="band-tag">Suspicious</span><span class="range">25 – 49</span>
+          <span class="desc">Review the sender and links before interacting.</span>
+        </div>
+        <div class="row band-high">
+          <span class="band-tag">High Risk</span><span class="range">50 – 74</span>
+          <span class="desc">Verify through a channel you already trust.</span>
+        </div>
+        <div class="row band-critical">
+          <span class="band-tag">Critical Risk</span><span class="range">75 – 100</span>
+          <span class="desc">Do not interact; report it.</span>
+        </div>
+      </div>
+      <p class="preview-note spaced">
+        A score of 80 does not mean "80% likely to be phishing". It means the message accumulated
+        80 points of weighted indicators. EmailShield never states a probability, because it has
+        no basis for one.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ DETECTION -->
+<section class="section" id="detection">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>What it looks for</h2>
+      <p>44 rules across six categories. Every one of them explains itself in the report:
+         what was observed, the evidence from the message, and why it matters.</p>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <p class="count">Sender · 9 rules · cap 35</p>
+        <h3>Does the identity shown match the identity sent from?</h3>
+        <p>Display names containing a different address or claiming a brand the domain doesn't
+           back; lookalike domains; Reply-To and Return-Path mismatches; internal-looking mail
+           that failed authentication; consumer webmail used for business requests.
+           Lookalike detection folds confusable characters (0↔o, rn↔m, 1↔l) to a skeleton and
+           applies a bounded edit distance, so both <code>micros0ft-verify.example</code> and
+           <code>examp1e.com</code> are caught.</p>
+      </div>
+      <div class="card">
+        <p class="count">Authentication · 6 rules · cap 30</p>
+        <h3>What did the receiving server conclude?</h3>
+        <p>SPF, DKIM and DMARC verdicts read from <code>Authentication-Results</code>, falling
+           back to <code>Received-SPF</code>. Hard failures score more than soft ones. A message
+           with no results is reported as unknown rather than treated as a pass — absence of
+           evidence is not evidence.</p>
+      </div>
+      <div class="card">
+        <p class="count">Links · 13 rules · cap 40</p>
+        <h3>Where would this actually take you?</h3>
+        <p>Link text that shows one address and points at another; raw IPs including decimal and
+           hex forms; punycode hosts; shorteners; lookalike domains; a brand used as a subdomain
+           of somewhere else; <code>user@host</code> obfuscation; odd ports; suspicious encoding;
+           sign-in pages over plain HTTP; direct downloads; <code>javascript:</code> and
+           <code>data:</code> schemes.</p>
+      </div>
+      <div class="card">
+        <p class="count">Message content · 8 rules · cap 25</p>
+        <h3>Is it working on you?</h3>
+        <p>Urgency, credential requests, threatened consequences, financial and gift-card lures,
+           authority impersonation. Each family needs a multi-word phrase or corroboration before
+           it fires, so an ordinary message containing the word "urgent" stays quiet. Plus forms
+           that collect passwords, and text hidden with <code>display:none</code> or zero font size.</p>
+      </div>
+      <div class="card">
+        <p class="count">Attachments · 5 rules · cap 30</p>
+        <h3>What is attached, and what would open it?</h3>
+        <p>Dangerous extensions, double extensions like <code>invoice.pdf.exe</code>,
+           macro-capable Office formats, HTML attachments, archives. Metadata and SHA-256 only —
+           nothing is opened, extracted or executed, and the report says
+           <b>Malware scanning: Not configured</b> because there is no scanner.</p>
+      </div>
+      <div class="card">
+        <p class="count">Headers · 3 rules · cap 15</p>
+        <h3>Does the delivery story hold together?</h3>
+        <p>No <code>Received</code> chain at all; a <code>Re:</code> subject with no
+           <code>In-Reply-To</code> or <code>References</code>, the usual sign of a fake reply;
+           a <code>Message-ID</code> issued by a different domain than the sender.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================= SECURITY -->
+<section class="section" id="security">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Handling hostile input</h2>
+      <p>
+        Every file this page is given is, by definition, something somebody already suspected
+        was an attack. Three things follow from that.
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h3>1 · No URL is ever requested</h3></div>
+      <p>A phishing analyser is an obvious target for server-side request forgery: it is handed
+         attacker-chosen URLs and might plausibly want to check them. EmailShield doesn't.
+         Links are parsed as strings and analysed structurally. No fetch, no DNS lookup, no
+         reputation API, no preview request. The cost is that a shortened link's destination
+         cannot be resolved — which the report states plainly rather than guessing.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h3>2 · The message body is rendered inert</h3></div>
+      <p>An allowlist sanitiser rebuilds the document from scratch. Tags that can carry behaviour
+         — <code>script</code>, <code>style</code>, <code>iframe</code>, <code>object</code>,
+         <code>form</code>, <code>svg</code> and the rest — are dropped <em>with their contents</em>.
+         Every attribute outside a short layout allowlist is discarded, which removes every
+         <code>on*</code> handler without enumerating them. <code>&lt;img&gt;</code> is removed
+         entirely so tracking pixels cannot fire and confirm the message was read.
+         <code>href</code> is stripped and the destination printed as text beside the link, so
+         nothing in a preview is one click from anywhere.</p>
+      <p>The result is then rendered in an iframe with <code>sandbox=""</code>, which gives it an
+         opaque origin: even if sanitisation were bypassed completely, the browser refuses to run
+         script in it.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h3>3 · Nothing leaves your browser</h3></div>
+      <p>This page has no backend. The file is read with <code>FileReader</code>, parsed, analysed
+         and rendered locally; it is never uploaded anywhere, including to whoever is hosting this
+         page. The only thing stored is a short list of filenames and scores in this browser's own
+         <code>localStorage</code>, which you can clear with the button above.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3>The full application</h3>
+        <span class="note">Python · Flask · SQLite</span>
+      </div>
+      <p>This page is a browser port of a server application built for internal deployment. That
+         version adds what a browser cannot do: single sign-on, per-user isolation and an audit
+         trail.</p>
+      <div class="diagram-scroll">
+      <svg class="diagram" viewBox="0 0 620 540" role="img"
+           aria-label="Architecture: the browser talks to the Flask application over HTTPS with a session cookie. The application's auth module exchanges OIDC with an external identity provider. Below it, SQLite holds users, sessions, analyses, findings and audit logs, and a separate upload directory outside the web root holds uploaded files at mode 0700 under random filenames, purged after 24 hours. No outbound connection is ever made to anything found inside an uploaded message.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--line-strong)"></path>
+          </marker>
+        </defs>
+
+        <!-- browser -->
+        <rect x="200" y="8" width="220" height="40" rx="3"
+              fill="var(--surface-sunk)" stroke="var(--line-strong)"></rect>
+        <text x="310" y="33" text-anchor="middle" font-size="14"
+              font-family="var(--sans)" font-weight="600" fill="var(--ink)">Browser</text>
+
+        <line x1="310" y1="48" x2="310" y2="86" stroke="var(--line-strong)"
+              stroke-width="1.5" marker-end="url(#arrow)"></line>
+        <text x="324" y="66" font-size="11" font-family="var(--mono)" fill="var(--muted)">HTTPS · session cookie</text>
+        <text x="324" y="82" font-size="11" font-family="var(--mono)" fill="var(--muted)">HttpOnly · SameSite=Lax</text>
+
+        <!-- flask application -->
+        <rect x="90" y="90" width="330" height="200" rx="3"
+              fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"></rect>
+        <text x="106" y="112" font-size="13" font-family="var(--sans)"
+              font-weight="600" fill="var(--accent)">Flask application</text>
+        <g font-size="11.5" font-family="var(--mono)" fill="var(--ink)">
+          <text x="106" y="138">auth/</text>
+          <text x="208" y="138" fill="var(--muted)">OIDC relying party, sessions</text>
+          <text x="106" y="160">security/</text>
+          <text x="208" y="160" fill="var(--muted)">upload checks, sanitiser</text>
+          <text x="106" y="182">email_parser/</text>
+          <text x="208" y="182" fill="var(--muted)">stdlib email, hard limits</text>
+          <text x="106" y="204">analyzers/</text>
+          <text x="208" y="204" fill="var(--muted)">sender · headers · urls ·</text>
+          <text x="208" y="222" fill="var(--muted)">content · attachments</text>
+          <text x="106" y="248">scoring/</text>
+          <text x="208" y="248" fill="var(--muted)">rules + engine</text>
+          <text x="106" y="272">db.py</text>
+          <text x="208" y="272" fill="var(--muted)">retention, audit trail</text>
+        </g>
+
+        <!-- identity provider -->
+        <rect x="460" y="140" width="152" height="86" rx="3"
+              fill="var(--surface-sunk)" stroke="var(--line-strong)"></rect>
+        <text x="536" y="168" text-anchor="middle" font-size="12.5"
+              font-family="var(--sans)" font-weight="600" fill="var(--ink)">Identity provider</text>
+        <text x="536" y="188" text-anchor="middle" font-size="11"
+              font-family="var(--mono)" fill="var(--muted)">Entra · Google</text>
+        <text x="536" y="205" text-anchor="middle" font-size="11"
+              font-family="var(--mono)" fill="var(--muted)">Okta · Keycloak</text>
+
+        <line x1="420" y1="183" x2="460" y2="183" stroke="var(--line-strong)"
+              stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"></line>
+        <text x="440" y="175" text-anchor="middle" font-size="10"
+              font-family="var(--mono)" fill="var(--muted)">OIDC</text>
+
+        <!-- storage -->
+        <line x1="180" y1="290" x2="180" y2="336" stroke="var(--line-strong)"
+              stroke-width="1.5" marker-end="url(#arrow)"></line>
+        <line x1="330" y1="290" x2="330" y2="336" stroke="var(--line-strong)"
+              stroke-width="1.5" marker-end="url(#arrow)"></line>
+
+        <rect x="90" y="340" width="180" height="130" rx="3"
+              fill="var(--surface)" stroke="var(--line-strong)"></rect>
+        <text x="106" y="362" font-size="12.5" font-family="var(--sans)"
+              font-weight="600" fill="var(--ink)">SQLite</text>
+        <g font-size="11.5" font-family="var(--mono)" fill="var(--muted)">
+          <text x="106" y="384">users</text>
+          <text x="106" y="402">sessions</text>
+          <text x="106" y="420">analyses</text>
+          <text x="106" y="438">findings</text>
+          <text x="106" y="456">audit_logs</text>
+        </g>
+
+        <rect x="290" y="340" width="200" height="130" rx="3"
+              fill="var(--surface)" stroke="var(--line-strong)"></rect>
+        <text x="306" y="362" font-size="12.5" font-family="var(--sans)"
+              font-weight="600" fill="var(--ink)">Upload directory</text>
+        <g font-size="11.5" font-family="var(--mono)" fill="var(--muted)">
+          <text x="306" y="384">mode 0700</text>
+          <text x="306" y="402">outside the web root</text>
+          <text x="306" y="420">random filenames</text>
+          <text x="306" y="438">never served</text>
+          <text x="306" y="456">purged at 24h</text>
+        </g>
+
+        <text x="310" y="502" text-anchor="middle" font-size="11.5"
+              font-family="var(--mono)" fill="var(--crit-ink)">
+          No outbound connection is ever made to anything
+        </text>
+        <text x="310" y="521" text-anchor="middle" font-size="11.5"
+              font-family="var(--mono)" fill="var(--crit-ink)">
+          found inside an uploaded message.
+        </text>
+      </svg>
+      </div>
+      <ul class="plain spaced-lg">
+        <li><b>Authentication.</b> OpenID Connect, Authorization Code flow with PKCE. The ID token
+          is checked for signature against the provider's JWKS, issuer, audience, expiry and nonce
+          before any session exists. No passwords are stored, requested, or possible —
+          there is no password column in the schema.</li>
+        <li><b>Authorization.</b> Ownership is scoped in the SQL <code>WHERE</code> clause, not
+          compared after the fetch. A report belonging to someone else returns the identical 404
+          as one that doesn't exist, so identifiers can't be probed. Administrators get statistics
+          and the audit trail — not other people's correspondence.</li>
+        <li><b>Uploads.</b> Extension allowlist, size limit enforced before parsing, and a content
+          sniff that rejects a renamed executable. Files are written with
+          <code>O_EXCL</code> and mode <code>0600</code> under a random name, in a directory
+          outside the web root.</li>
+        <li><b>Retention.</b> Message content is deleted after 24 hours. The score, band and rule
+          IDs survive, so history stays meaningful without holding anybody's correspondence.</li>
+        <li><b>Audit trail.</b> Sign-ins, analyses and report views are recorded. Client addresses
+          are stored as a truncated keyed HMAC, never in the clear, and no message content is
+          ever written to the log.</li>
+        <li><b>Tests.</b> 178 of them, including attacks on the auth flow — forged signature,
+          <code>alg=none</code>, replayed authorization code, wrong audience, missing nonce — and
+          on object ownership, CSRF and path traversal. One replaces the socket constructor with a
+          function that raises, then runs the URL analyzer, to prove no link is fetched.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== LIMITATIONS -->
+<section class="section" id="limits">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>What it can't do</h2>
+      <p>This is decision support for a person, not an automated verdict. Being straight about
+         the edges is part of the tool working properly.</p>
+    </div>
+
+    <div class="panel">
+      <ul class="plain">
+        <li><b>Headers can be forged.</b> SPF, DKIM and DMARC verdicts come from a header the
+          <em>receiving</em> mail server added. EmailShield cannot verify DKIM signatures itself,
+          because that depends on the receiving server's view of the message. A message exported
+          from a mailbox whose gateway adds no such header is reported as unknown.</li>
+        <li><b>False positives are expected.</b> Marketing platforms wrap links in tracking
+          redirectors, which look exactly like link-text mismatches. A newsletter from a mailing
+          service will often land in the Suspicious band. Every finding is explained precisely so
+          you can dismiss one on the evidence.</li>
+        <li><b>False negatives are expected.</b> A well-crafted, authenticated, plain-text message
+          from a genuinely compromised account may score zero. Nothing here detects a real account
+          that has been taken over.</li>
+        <li><b>No malware analysis.</b> Attachments are hashed and classified by extension.
+          A malicious PDF is invisible to this tool.</li>
+        <li><b>No threat intelligence.</b> No domain reputation, no blocklists, no sandbox
+          detonation. Both of these are reported as <em>Not configured</em> rather than quietly
+          omitted, so the report never implies a check that didn't happen.</li>
+        <li><b>Registrable domains are approximated.</b> A small built-in suffix table stands in
+          for the Public Suffix List, so unusual TLDs may split incorrectly and affect lookalike
+          comparisons.</li>
+        <li><b>Language rules are English-only.</b> Phishing in another language won't trip the
+          content rules, though every structural rule still applies.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>
+      EmailShield analyses email structure and language. It does not guarantee that a message is
+      safe, and it produces both false positives and false negatives. Treat the score as one input
+      to your own judgement — and when something feels wrong, verify with the sender through a
+      channel you already trust.
+    </p>
+    <p class="spaced">
+      Sample messages are synthetic. Every domain in them is a reserved example domain and every
+      IP address is from a TEST-NET range, so nothing in them resolves to a real host.
+    </p>
+  </div>
+</footer>
+<script>
+"use strict";
+
+/* ===========================================================================
+   EmailShield — browser port
+   ---------------------------------------------------------------------------
+   A faithful JavaScript port of the Python application's parser, 44-rule
+   detection set, scoring engine and HTML sanitiser. Everything below runs in
+   this tab: the file is read with FileReader, never sent anywhere. No URL
+   found inside a message is ever requested — see analyseUrls().
+   ======================================================================== */
+
+/* ------------------------------------------------------------------ bytes */
+/* The message is held as a latin1 string where one character is exactly one
+   byte, so string indices are byte offsets. That keeps MIME boundary
+   splitting simple while still allowing correct charset decoding per part. */
+
+function bytesToLatin1(bytes) {
+  let out = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return out;
+}
+
+function latin1ToBytes(text) {
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
+  return out;
+}
+
+function decodeBytes(bytes, charset) {
+  const label = (charset || "utf-8").toLowerCase().replace(/^["']|["']$/g, "");
+  try {
+    return new TextDecoder(label, { fatal: false }).decode(bytes);
+  } catch (err) {
+    try {
+      return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    } catch (err2) {
+      return bytesToLatin1(bytes);
+    }
+  }
+}
+
+/* ------------------------------------------------------- transfer encodings */
+
+function decodeQuotedPrintable(text) {
+  return text
+    .replace(/=\r?\n/g, "")
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function decodeBase64(text) {
+  const cleaned = text.replace(/[^A-Za-z0-9+/=]/g, "");
+  try {
+    return atob(cleaned);
+  } catch (err) {
+    // Tolerate truncated or padded-wrong base64 rather than losing the part.
+    const trimmed = cleaned.slice(0, Math.floor(cleaned.length / 4) * 4);
+    try { return atob(trimmed); } catch (err2) { return ""; }
+  }
+}
+
+function decodeTransfer(body, encoding) {
+  const enc = (encoding || "").toLowerCase().trim();
+  if (enc === "base64") return decodeBase64(body);
+  if (enc === "quoted-printable") return decodeQuotedPrintable(body);
+  return body;
+}
+
+/* ------------------------------------------------- RFC 2047 header decoding */
+
+function decodeRfc2047(value) {
+  if (!value || value.indexOf("=?") === -1) return value;
+  return value.replace(
+    /=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g,
+    (whole, charset, kind, payload) => {
+      try {
+        let raw;
+        if (kind.toLowerCase() === "b") {
+          raw = decodeBase64(payload);
+        } else {
+          raw = payload.replace(/_/g, " ")
+            .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+        }
+        return decodeBytes(latin1ToBytes(raw), charset);
+      } catch (err) {
+        return whole;
+      }
+    }
+  ).replace(/\?=\s+=\?/g, "?==?");
+}
+
+/* --------------------------------------------------------------- addresses */
+
+function parseAddresses(raw) {
+  if (!raw) return [];
+  const out = [];
+  // Split on commas that are not inside quotes or angle brackets.
+  let depth = 0, quoted = false, current = "";
+  for (const ch of raw) {
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && ch === "<") depth++;
+    else if (!quoted && ch === ">") depth = Math.max(0, depth - 1);
+    if (ch === "," && !quoted && depth === 0) { out.push(current); current = ""; continue; }
+    current += ch;
+  }
+  if (current.trim()) out.push(current);
+
+  return out.map((entry) => {
+    const text = decodeRfc2047(entry.trim());
+    const angle = text.match(/<([^>]*)>/);
+    let address = "", display = "";
+    if (angle) {
+      address = angle[1].trim();
+      display = text.slice(0, angle.index).trim();
+    } else {
+      address = text.trim();
+    }
+    display = display.replace(/^["']|["']$/g, "").trim();
+    address = address.replace(/^["']|["']$/g, "").trim();
+    if (address.includes("@")) address = address.toLowerCase();
+    return {
+      displayName: display,
+      address: address,
+      get domain() {
+        const at = this.address.lastIndexOf("@");
+        return at === -1 ? "" : this.address.slice(at + 1);
+      },
+      toString() {
+        return this.displayName ? `${this.displayName} <${this.address}>` : this.address;
+      },
+    };
+  }).filter((a) => a.address || a.displayName);
+}
+
+function emptyAddress() {
+  return { displayName: "", address: "", domain: "", toString: () => "" };
+}
+
+/* ------------------------------------------------------ authentication results */
+
+const AUTH_VERDICTS = ["pass", "fail", "softfail", "neutral", "none", "temperror", "permerror"];
+
+function parseAuthResults(values) {
+  const auth = { spf: "UNKNOWN", dkim: "UNKNOWN", dmarc: "UNKNOWN", raw: values.slice() };
+  for (const value of values) {
+    const lowered = value.toLowerCase();
+    for (const method of ["spf", "dkim", "dmarc"]) {
+      if (auth[method] !== "UNKNOWN") continue;               // first verdict wins
+      const match = lowered.match(new RegExp(`\\b${method}\\s*=\\s*([a-z]+)`));
+      if (match && AUTH_VERDICTS.includes(match[1])) {
+        auth[method] = match[1].toUpperCase();
+      }
+    }
+  }
+  return auth;
+}
+
+function mergeReceivedSpf(auth, received) {
+  if (auth.spf !== "UNKNOWN" || !received.length) return auth;
+  const first = received[0].toLowerCase().trim();
+  for (const verdict of AUTH_VERDICTS) {
+    if (first.startsWith(verdict)) { auth.spf = verdict.toUpperCase(); break; }
+  }
+  return auth;
+}
+
+/* -------------------------------------------------------------- MIME parsing */
+
+const MAX_PARTS = 200;
+const MAX_DEPTH = 20;
+const MAX_BODY_CHARS = 200000;
+const MAX_ATTACHMENTS = 50;
+
+class EmailParseError extends Error {}
+
+function splitHeadersAndBody(raw) {
+  const match = raw.match(/\r?\n\r?\n/);
+  if (!match) return [raw, ""];
+  return [raw.slice(0, match.index), raw.slice(match.index + match[0].length)];
+}
+
+function parseHeaderBlock(block) {
+  // Unfold continuation lines, then split on the first colon.
+  const unfolded = block.replace(/\r?\n[ \t]+/g, " ");
+  const headers = [];
+  for (const line of unfolded.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const colon = line.indexOf(":");
+    if (colon <= 0) continue;
+    headers.push([line.slice(0, colon).trim(), line.slice(colon + 1).trim()]);
+  }
+  return headers;
+}
+
+function headerValue(headers, name) {
+  const lowered = name.toLowerCase();
+  for (const [key, value] of headers) {
+    if (key.toLowerCase() === lowered) return decodeRfc2047(value);
+  }
+  return "";
+}
+
+function headerValues(headers, name) {
+  const lowered = name.toLowerCase();
+  return headers.filter(([k]) => k.toLowerCase() === lowered).map(([, v]) => v);
+}
+
+function parseContentType(value) {
+  const parts = (value || "").split(";");
+  const type = (parts.shift() || "").trim().toLowerCase();
+  const params = {};
+  for (const part of parts) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    // Keys are case-insensitive; values are NOT — lowercasing them would
+    // mangle the filename a message declares for an attachment.
+    const key = part.slice(0, eq).trim().toLowerCase();
+    params[key] = part.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+  }
+  return { type: type || "text/plain", params };
+}
+
+function walkParts(headers, body, depth, collected) {
+  if (collected.length >= MAX_PARTS || depth > MAX_DEPTH) return;
+  const ct = parseContentType(headerValue(headers, "Content-Type"));
+
+  if (ct.type.startsWith("multipart/") && ct.params.boundary) {
+    const boundary = "--" + ct.params.boundary;
+    const segments = body.split(boundary);
+    // segments[0] is the preamble; the last is the epilogue after "--"
+    for (let i = 1; i < segments.length; i++) {
+      let segment = segments[i];
+      if (segment.startsWith("--")) break;                  // closing delimiter
+      segment = segment.replace(/^\r?\n/, "");
+      const [subHeaderBlock, subBody] = splitHeadersAndBody(segment);
+      const subHeaders = parseHeaderBlock(subHeaderBlock);
+      walkParts(subHeaders, subBody, depth + 1, collected);
+      if (collected.length >= MAX_PARTS) return;
+    }
+    return;
+  }
+
+  collected.push({ headers, body, contentType: ct });
+}
+
+async function sha256Hex(bytes) {
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (err) {
+    return "(unavailable)";
+  }
+}
+
+function cleanAttachmentName(raw) {
+  /* Never write an attachment to disk — this is display data only. Separators
+     and control characters are stripped at the boundary anyway, rather than
+     trusting every later consumer to remember. */
+  if (!raw) return "";
+  let name = decodeRfc2047(raw).replace(/^["']|["']$/g, "");
+  name = name.replace(/\\/g, "/").split("/").pop();
+  name = name.replace(/[\u0000-\u001f\u007f]/g, "").trim().replace(/^\.+|\.+$/g, "");
+  return name.slice(0, 200);
+}
+
+async function parseEmail(bytes) {
+  const raw = bytesToLatin1(bytes);
+  if (!raw.trim()) throw new EmailParseError("The file is empty.");
+
+  const [headerBlock, body] = splitHeadersAndBody(raw);
+  const headers = parseHeaderBlock(headerBlock);
+  if (!headers.length) {
+    throw new EmailParseError("No email headers were found in this file.");
+  }
+
+  const parts = [];
+  walkParts(headers, body, 0, parts);
+
+  let textBody = "", htmlBody = "";
+  const attachments = [];
+
+  for (const part of parts) {
+    const disposition = headerValue(part.headers, "Content-Disposition") || "";
+    const encoding = headerValue(part.headers, "Content-Transfer-Encoding");
+    const filenameRaw =
+      (disposition.match(/filename\*?=([^;]+)/i) || [])[1] ||
+      part.contentType.params.name || "";
+    const filename = cleanAttachmentName(filenameRaw.trim());
+    const isAttachment = /(^|;)\s*attachment\b/i.test(disposition) ||
+      (filename && !part.contentType.type.startsWith("multipart/"));
+
+    const decodedRaw = decodeTransfer(part.body, encoding);
+
+    if (isAttachment && filename) {
+      if (attachments.length >= MAX_ATTACHMENTS) continue;
+      const attachmentBytes = latin1ToBytes(decodedRaw);
+      attachments.push({
+        filename,
+        contentType: part.contentType.type,
+        size: attachmentBytes.length,
+        sha256: await sha256Hex(attachmentBytes),
+      });
+      continue;
+    }
+
+    const charset = part.contentType.params.charset || "utf-8";
+    const decoded = decodeBytes(latin1ToBytes(decodedRaw), charset);
+    if (part.contentType.type === "text/html") {
+      if (!htmlBody) htmlBody = decoded;
+    } else if (part.contentType.type.startsWith("text/") || !part.contentType.type) {
+      if (!textBody) textBody = decoded;
+    }
+  }
+
+  const fromList = parseAddresses(headerValue(headers, "From"));
+  const replyList = parseAddresses(headerValue(headers, "Reply-To"));
+  const returnList = parseAddresses(headerValue(headers, "Return-Path"));
+
+  const auth = mergeReceivedSpf(
+    parseAuthResults(headerValues(headers, "Authentication-Results")),
+    headerValues(headers, "Received-SPF")
+  );
+
+  const from = fromList[0] || emptyAddress();
+
+  return {
+    subject: headerValue(headers, "Subject"),
+    fromAddress: from,
+    toAddresses: parseAddresses(headerValue(headers, "To")),
+    ccAddresses: parseAddresses(headerValue(headers, "Cc")),
+    replyTo: replyList[0] || null,
+    returnPath: returnList[0] || null,
+    dateRaw: headerValue(headers, "Date"),
+    messageId: headerValue(headers, "Message-ID"),
+    received: headerValues(headers, "Received"),
+    auth,
+    headers,
+    textBody: textBody.slice(0, MAX_BODY_CHARS),
+    htmlBody: htmlBody.slice(0, MAX_BODY_CHARS),
+    attachments,
+    get senderDomain() { return this.fromAddress.domain; },
+    header(name) { return headerValue(this.headers, name); },
+  };
+}
+
+function looksLikeEmail(bytes) {
+  const head = bytesToLatin1(bytes.subarray(0, 2048));
+  // Reject renamed binaries before anything tries to parse them.
+  const signatures = ["MZ", "\x7fELF", "PK\x03\x04", "%PDF", "\x89PNG", "GIF8", "\xff\xd8\xff"];
+  if (signatures.some((sig) => head.startsWith(sig))) return false;
+  return /^[A-Za-z-]+:\s?.+$/m.test(head) &&
+    /(^|\n)(from|received|subject|to|date|message-id|mime-version|return-path)\s*:/i.test(head);
+}
+
+/* ===========================================================================
+   Domain helpers — deliberately offline. No DNS, no WHOIS, no reputation
+   lookups. Every check is structural or string-similarity, which keeps the
+   analysis deterministic and free of the SSRF risk that comes with touching
+   attacker-controlled hosts.
+   ======================================================================== */
+
+const MULTI_LABEL_SUFFIXES = new Set([
+  "co.uk","org.uk","ac.uk","gov.uk","me.uk","net.uk",
+  "com.au","net.au","org.au","edu.au","gov.au",
+  "co.nz","co.za","co.jp","or.jp","ne.jp","ac.jp",
+  "com.br","com.mx","com.ar","com.cn","com.sg","com.hk",
+  "co.in","co.kr","co.il","com.tr","com.tw","com.pl",
+]);
+
+const URL_SHORTENERS = new Set([
+  "bit.ly","t.co","goo.gl","tinyurl.com","ow.ly","is.gd","buff.ly","adf.ly",
+  "bit.do","cutt.ly","shorturl.at","rb.gy","rebrand.ly","tiny.cc","lnkd.in",
+  "t.ly","short.io","s.id","qr.ae","u.to",
+]);
+
+const FREEMAIL_DOMAINS = new Set([
+  "gmail.com","googlemail.com","yahoo.com","yahoo.co.uk","hotmail.com",
+  "outlook.com","live.com","msn.com","aol.com","icloud.com","me.com",
+  "protonmail.com","proton.me","gmx.com","mail.com","yandex.com","zoho.com",
+  "tutanota.com","hushmail.com",
+]);
+
+const KNOWN_BRANDS = {
+  "microsoft": ["microsoft.com","outlook.com","office.com","office365.com","microsoftonline.com","live.com","azure.com","sharepoint.com"],
+  "office 365": ["microsoft.com","office.com","office365.com","microsoftonline.com"],
+  "outlook": ["microsoft.com","outlook.com","office.com"],
+  "onedrive": ["microsoft.com","onedrive.com","sharepoint.com"],
+  "sharepoint": ["microsoft.com","sharepoint.com"],
+  "google": ["google.com","gmail.com","googlemail.com","youtube.com","accounts.google.com"],
+  "gmail": ["google.com","gmail.com","googlemail.com"],
+  "apple": ["apple.com","icloud.com","me.com"],
+  "icloud": ["apple.com","icloud.com"],
+  "amazon": ["amazon.com","amazon.co.uk","amazonses.com","aws.amazon.com"],
+  "aws": ["amazon.com","aws.amazon.com","amazonaws.com"],
+  "paypal": ["paypal.com","paypal.co.uk"],
+  "docusign": ["docusign.com","docusign.net"],
+  "dropbox": ["dropbox.com","dropboxmail.com"],
+  "netflix": ["netflix.com"],
+  "linkedin": ["linkedin.com","lnkd.in"],
+  "facebook": ["facebook.com","facebookmail.com","meta.com"],
+  "meta": ["facebook.com","meta.com"],
+  "adobe": ["adobe.com","adobesign.com"],
+  "slack": ["slack.com","slack-mail.com"],
+  "zoom": ["zoom.us","zoom.com"],
+  "salesforce": ["salesforce.com"],
+  "okta": ["okta.com","oktapreview.com"],
+  "fedex": ["fedex.com"],
+  "ups": ["ups.com"],
+  "dhl": ["dhl.com","dhl.de"],
+  "chase": ["chase.com"],
+  "wells fargo": ["wellsfargo.com"],
+  "bank of america": ["bankofamerica.com"],
+  "hsbc": ["hsbc.com","hsbc.co.uk"],
+  "irs": ["irs.gov"],
+  "norton": ["norton.com","nortonlifelock.com"],
+  "mcafee": ["mcafee.com"],
+  "geek squad": ["bestbuy.com","geeksquad.com"],
+};
+
+const CONFUSABLES = { "0":"o","1":"l","3":"e","4":"a","5":"s","7":"t","8":"b","$":"s","@":"a","|":"l","!":"i" };
+
+function normaliseHost(host) {
+  if (!host) return "";
+  host = String(host).trim().replace(/^\.+|\.+$/g, "").toLowerCase();
+  if (host.includes("@")) host = host.slice(host.lastIndexOf("@") + 1);
+  if (host.startsWith("[") && host.includes("]")) return host.slice(0, host.indexOf("]") + 1);
+  if (host.includes(":")) host = host.split(":")[0];
+  return host;
+}
+
+function isIpLiteral(host) {
+  host = normaliseHost(host);
+  if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+    return host.split(".").every((o) => Number(o) >= 0 && Number(o) <= 255);
+  }
+  if (/^[0-9a-f:]+$/i.test(host) && host.includes("::")) return true;
+  if (/^(0x[0-9a-f]+|\d{6,12})$/i.test(host)) return true;   // decimal / hex IPv4
+  return false;
+}
+
+function registrableDomain(host) {
+  host = normaliseHost(host);
+  if (!host || isIpLiteral(host)) return host;
+  const labels = host.split(".");
+  if (labels.length <= 2) return host;
+  const lastTwo = labels.slice(-2).join(".");
+  if (MULTI_LABEL_SUFFIXES.has(lastTwo) && labels.length >= 3) return labels.slice(-3).join(".");
+  return lastTwo;
+}
+
+function subdomainLabels(host) {
+  host = normaliseHost(host);
+  const registrable = registrableDomain(host);
+  if (!host || host === registrable) return [];
+  return host.slice(0, -(registrable.length + 1)).split(".").filter(Boolean);
+}
+
+function sameRegistrableDomain(a, b) {
+  const ra = registrableDomain(a), rb = registrableDomain(b);
+  return Boolean(ra) && ra === rb;
+}
+
+const isShortener = (host) => URL_SHORTENERS.has(registrableDomain(host));
+const isFreemail = (host) => FREEMAIL_DOMAINS.has(registrableDomain(host));
+const hasPunycode = (host) => normaliseHost(host).split(".").some((l) => l.startsWith("xn--"));
+const hasNonAscii = (host) => /[^\x00-\x7f]/.test(host || "");
+
+function skeleton(text) {
+  if (!text) return "";
+  let out = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  out = out.split("").map((ch) => CONFUSABLES[ch] || ch).join("");
+  out = out.replace(/rn/g, "m").replace(/vv/g, "w").replace(/ii/g, "n");
+  return out.replace(/[^a-z0-9]/g, "");
+}
+
+function levenshtein(a, b, maxDistance = 4) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const value = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+      current.push(value);
+      best = Math.min(best, value);
+    }
+    previous = current;
+    if (best > maxDistance) return maxDistance + 1;
+  }
+  return previous[b.length];
+}
+
+function isLookalike(candidate, target) {
+  const cand = registrableDomain(candidate);
+  const targ = registrableDomain(target);
+  if (!cand || !targ || cand === targ) return false;
+
+  const candName = cand.split(".")[0];
+  const targName = targ.split(".")[0];
+  if (targName.length < 4) return false;
+
+  if (skeleton(candName) === skeleton(targName)) return true;
+
+  const targetSkeleton = skeleton(targName);
+  const tokens = candName.split(/[-_.]/).filter(Boolean);
+  if (tokens.length > 1 && tokens.some((t) => skeleton(t) === targetSkeleton)) return true;
+
+  const distance = levenshtein(candName, targName, 2);
+  if (distance <= 1) return true;
+  if (distance === 2 && targName.length >= 8) return true;
+  return false;
+}
+
+function brandClaimedIn(text) {
+  if (!text) return [];
+  const lowered = " " + text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ") + " ";
+  return Object.keys(KNOWN_BRANDS)
+    .filter((brand) => lowered.includes(` ${brand} `))
+    .sort((a, b) => b.length - a.length);
+}
+
+const brandDomains = (brand) => KNOWN_BRANDS[brand] || [];
+
+/* ===========================================================================
+   The rule book. Every point value, cap and band threshold lives here — this
+   is the one place to edit when tuning. Points are NOT probabilities: a score
+   of 80 means the message accumulated 80 points of weighted indicators, not
+   that it is 80% likely to be phishing.
+   ======================================================================== */
+
+const MAX_SCORE = 100;
+
+const RISK_BANDS = [
+  [75, "critical", "Critical Risk",
+   "Do not interact with this message. Follow your organisation's phishing-reporting procedure and report it to your security team."],
+  [50, "high", "High Risk",
+   "Avoid clicking links, opening attachments, or entering credentials until the message has been independently verified with the sender through a channel you already trust."],
+  [25, "suspicious", "Suspicious",
+   "Review the sender and links carefully before interacting with this message. If anything is unexpected, verify it with the sender directly."],
+  [0, "low", "Low Risk",
+   "No major phishing indicators were detected. This does not guarantee the message is safe — always treat unexpected requests with caution."],
+];
+
+const CATEGORY_CAPS = { sender: 35, authentication: 30, headers: 15, urls: 40, content: 25, attachments: 30 };
+const CATEGORY_LABELS = { sender: "Sender", authentication: "Authentication", headers: "Headers", urls: "Links", content: "Message content", attachments: "Attachments" };
+const SEVERITY_ORDER = { high: 0, medium: 1, low: 2, info: 3 };
+
+function rule(id, category, title, points, severity, why) {
+  return { ruleId: id, category, title, points, severity, why };
+}
+
+const RULES = {};
+[
+  /* ---------------------------------------------------------------- sender */
+  rule("from_missing", "sender", "No usable From address", 10, "medium",
+    "The message does not carry a readable From address. Legitimate mail systems almost always set one, and its absence usually means the headers were hand-crafted."),
+  rule("display_name_brand_mismatch", "sender", "Display name does not match the sending domain", 20, "high",
+    "The name shown in your mail client claims to be a well-known organisation, but the message was actually sent from an unrelated domain. Mail clients show the display name and hide the address, which is why this is one of the most common phishing techniques."),
+  rule("display_name_spoofed_address", "sender", "Display name contains a different email address", 20, "high",
+    "The display name has been set to an email address that is not the address the message came from. This is done so the fake address is what you see at a glance."),
+  rule("sender_lookalike_org_domain", "sender", "Sender domain imitates your organisation's domain", 20, "high",
+    "The sending domain is a near-match for your organisation's own domain — a character swapped, added or removed. Lookalike domains are registered specifically to pass a quick visual check."),
+  rule("sender_lookalike_brand_domain", "sender", "Sender domain imitates a well-known brand", 20, "high",
+    "The sending domain closely resembles a brand's real domain without being it. This is a typosquatting pattern."),
+  rule("reply_to_mismatch", "sender", "Reply-To points to a different domain", 15, "medium",
+    "The message was sent from one domain but replies are directed to another. This happens legitimately with mailing lists and support desks, but it is also how an attacker collects your reply without controlling the sending domain."),
+  rule("return_path_mismatch", "sender", "Return-Path differs from the sender domain", 10, "low",
+    "The bounce address does not share a domain with the From address. Bulk senders and marketing platforms do this routinely, so on its own it is weak evidence — it matters in combination with other indicators."),
+  rule("org_domain_spoof_unauthenticated", "sender", "Claims to be internal mail but failed authentication", 15, "high",
+    "The message claims to come from your own organisation's domain yet did not pass the domain's authentication checks. Genuine internal mail normally authenticates successfully."),
+  rule("freemail_sender_business_context", "sender", "Business request sent from a personal mailbox", 8, "low",
+    "The message uses a free consumer email provider while presenting itself as business or brand correspondence. Attackers use free mailboxes because they need no infrastructure."),
+
+  /* -------------------------------------------------------- authentication */
+  rule("dmarc_fail", "authentication", "DMARC authentication failed", 20, "high",
+    "DMARC checks that the visible From domain matches a domain that actually authorised the message. A failure means the sending server could not prove it was allowed to send as that domain. Misconfigured forwarding can also cause this, so it is one signal among several."),
+  rule("spf_fail", "authentication", "SPF authentication failed", 15, "high",
+    "The domain owner publishes a list of servers allowed to send their mail, and this message did not come from one of them."),
+  rule("dkim_fail", "authentication", "DKIM signature did not verify", 12, "medium",
+    "The cryptographic signature covering the message did not validate, meaning the content or headers changed in transit or the signature was never valid. Some mailing lists legitimately break DKIM."),
+  rule("spf_softfail", "authentication", "SPF returned a soft failure", 8, "medium",
+    "The domain owner indicated the sending server is probably not authorised, but asked receivers not to reject outright."),
+  rule("auth_results_missing", "authentication", "No authentication results present", 5, "info",
+    "The message carries no SPF, DKIM or DMARC verdict. That is normal for a message exported before delivery or sent internally, but it means authentication cannot be used as evidence either way."),
+  rule("auth_results_partial", "authentication", "Authentication results are incomplete", 3, "info",
+    "Only some authentication checks were recorded, so the picture is incomplete."),
+
+  /* --------------------------------------------------------------- headers */
+  rule("no_received_headers", "headers", "No delivery history in the headers", 5, "low",
+    "Received headers record each server that handled the message. A message with none has usually been constructed directly rather than delivered through mail servers."),
+  rule("reply_subject_without_thread", "headers", "Reply subject with no conversation history", 5, "low",
+    "The subject starts with Re: or Fwd: but the message is not linked to any earlier message. Attackers prepend Re: to make an unsolicited message look like part of an existing conversation."),
+  rule("message_id_domain_mismatch", "headers", "Message-ID domain differs from the sender domain", 5, "low",
+    "The identifier stamped by the sending system belongs to a different domain than the From address. Many legitimate platforms do this, so it only carries weight alongside other indicators."),
+
+  /* ------------------------------------------------------------------ urls */
+  rule("link_text_mismatch", "urls", "Link text does not match its destination", 15, "high",
+    "The text you see is written to look like one address while the link actually goes somewhere else. This is the single most reliable phishing indicator in an HTML message."),
+  rule("url_ip_literal", "urls", "Link points at a raw IP address", 15, "high",
+    "The link targets a numeric address instead of a domain name. Legitimate organisations publish services under a domain; raw IPs avoid the paper trail that registering one creates."),
+  rule("url_userinfo_obfuscation", "urls", "Link uses an @ to disguise its real destination", 15, "high",
+    "Everything before the @ in a web address is ignored by the browser. A link written as https://company.com@attacker.example actually goes to attacker.example."),
+  rule("url_punycode", "urls", "Link uses an internationalised (punycode) domain", 15, "high",
+    "The domain is encoded in a form that can render as letters from another alphabet which look identical to Latin characters, so the address can appear to read as a familiar name."),
+  rule("url_lookalike_domain", "urls", "Link domain imitates a trusted domain", 20, "high",
+    "A linked domain is a near-match for your organisation's domain or a well-known brand's domain without being it."),
+  rule("url_brand_in_subdomain", "urls", "Trusted name used as a subdomain of another site", 20, "high",
+    "A familiar name appears at the start of the address but the part that decides where you actually go — the last two labels before the first slash — belongs to someone else."),
+  rule("url_shortener", "urls", "Shortened link hides its destination", 10, "medium",
+    "A link-shortening service conceals where the link leads until it is opened. EmailShield does not follow links, so the destination cannot be checked from the message alone."),
+  rule("url_dangerous_scheme", "urls", "Link uses an executable scheme", 15, "high",
+    "The link uses a scheme such as javascript: or data: that runs code or loads embedded content rather than visiting a web page."),
+  rule("url_nonstandard_port", "urls", "Link uses an unusual network port", 10, "medium",
+    "The link specifies a port other than the standard web ports. This is common on ad-hoc servers and rare for corporate services."),
+  rule("url_insecure_credentials_page", "urls", "Sign-in link sent over plain HTTP", 10, "medium",
+    "The link asks for a sign-in or verification page over an unencrypted connection. Anything typed there travels in clear text."),
+  rule("url_suspicious_encoding", "urls", "Link contains obfuscated characters", 10, "medium",
+    "Parts of the address are percent-encoded or double-encoded in a way that hides the real destination from a quick read."),
+  rule("url_excessive_subdomains", "urls", "Link uses an unusually deep subdomain", 5, "low",
+    "Long chains of subdomains are used to push the real domain out of view, especially on a phone where the address bar is short."),
+  rule("url_direct_file_download", "urls", "Link points directly at a program file", 10, "medium",
+    "The link ends in an executable or archive file extension, so following it starts a download rather than opening a page."),
+
+  /* --------------------------------------------------------------- content */
+  rule("content_credential_request", "content", "Message asks you to confirm account credentials", 10, "medium",
+    "The message asks you to sign in, verify your identity or confirm your password. Credential harvesting is the goal of most phishing, and legitimate IT teams do not ask for passwords by email."),
+  rule("content_urgency", "content", "Urgent or time-limited language", 5, "low",
+    "Pressure to act immediately is used to stop you checking the message. Urgency alone is not suspicious, but it is a standard part of the technique."),
+  rule("content_threat_consequence", "content", "Threatens account suspension or loss", 5, "low",
+    "The message warns that something will be closed, suspended or lost unless you act, which is designed to trigger a reaction."),
+  rule("content_financial_request", "content", "Requests payment, gift cards or banking details", 8, "medium",
+    "The message steers you toward a payment, wire transfer, gift-card purchase or banking information — the direct-fraud variant of phishing, often aimed at finance staff."),
+  rule("content_authority_impersonation", "content", "Claims authority from IT, HR or a known brand", 5, "low",
+    "The message presents itself as coming from a department or company you are expected to obey without question."),
+  rule("content_generic_greeting", "content", "Generic or missing greeting", 3, "info",
+    "Mass phishing is addressed to nobody in particular. A real notice from a service you use normally knows your name."),
+  rule("content_html_form", "content", "Message contains a data-entry form", 12, "high",
+    "The email body includes an input form. Mail should not collect data directly; a form submits whatever you type straight to whoever sent the message."),
+  rule("content_hidden_text", "content", "Message contains hidden text", 8, "medium",
+    "Parts of the message are styled to be invisible — zero-size or matching the background. This is used to break up words that spam filters look for."),
+
+  /* ----------------------------------------------------------- attachments */
+  rule("attachment_dangerous_extension", "attachments", "Attachment is an executable or script", 15, "high",
+    "The attachment is a file type that runs code when opened. Business correspondence practically never needs to send one."),
+  rule("attachment_double_extension", "attachments", "Attachment hides its real file type", 20, "high",
+    "The filename carries two extensions, such as invoice.pdf.exe. The one that matters is the last, and systems that hide known extensions will display only the harmless-looking first one."),
+  rule("attachment_macro_office", "attachments", "Macro-enabled Office document attached", 12, "high",
+    "The document format is one that can carry macros, which are small programs that run on open if enabled."),
+  rule("attachment_html", "attachments", "HTML file attached", 12, "high",
+    "An attached web page opens in your browser from local storage, which is a common way to present a fake sign-in page while avoiding link filtering."),
+  rule("attachment_archive", "attachments", "Archive attachment", 5, "low",
+    "Archives conceal what they contain from mail filters until they are extracted. They are also completely routine, so this is weak evidence on its own."),
+].forEach((r) => { RULES[r.ruleId] = r; });
+
+function bandForScore(score) {
+  for (const [minimum, key, label, action] of RISK_BANDS) {
+    if (score >= minimum) return { key, label, action };
+  }
+  const last = RISK_BANDS[RISK_BANDS.length - 1];
+  return { key: last[1], label: last[2], action: last[3] };
+}
+
+function signal(ruleId, detail, ...evidence) {
+  return { ruleId, detail, evidence: evidence.filter(Boolean) };
+}
+
+/* ===========================================================================
+   HTML fact extraction.
+
+   DOMParser builds an INERT document: scripts do not run, images and other
+   subresources are not fetched, and no network request is made. That is what
+   makes it safe to hand it a hostile message body.
+   ======================================================================== */
+
+const HIDDEN_STYLE = /display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?:\.0+)?(?:px|pt|em|%)?\b|opacity\s*:\s*0(?:\.0+)?\b|(?:max-)?height\s*:\s*0(?:px)?\b|text-indent\s*:\s*-\d{3,}/i;
+const WHITE_TEXT = /color\s*:\s*(#f{3,6}\b|#fffff[0-9a-f]\b|white\b|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\))/i;
+
+function inspectHtml(html) {
+  const facts = {
+    links: [], formActions: [], hasPasswordInput: false,
+    inputCount: 0, hiddenSnippets: [], visibleText: "",
+  };
+  if (!html || !html.trim()) return facts;
+
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(html, "text/html");
+  } catch (err) {
+    return facts;
+  }
+
+  doc.querySelectorAll("a[href]").forEach((a) => {
+    if (facts.links.length >= 300) return;
+    facts.links.push({
+      href: a.getAttribute("href") || "",
+      text: (a.textContent || "").trim().slice(0, 300),
+    });
+  });
+
+  doc.querySelectorAll("form").forEach((form) => {
+    facts.formActions.push(form.getAttribute("action") || "(no action set)");
+  });
+
+  doc.querySelectorAll("input, textarea, select").forEach((field) => {
+    facts.inputCount++;
+    const type = (field.getAttribute("type") || "").toLowerCase();
+    const name = (field.getAttribute("name") || "").toLowerCase();
+    if (type === "password" || /pass(word|wd)|pwd/.test(name)) facts.hasPasswordInput = true;
+  });
+
+  doc.querySelectorAll("[style], [hidden]").forEach((el) => {
+    if (facts.hiddenSnippets.length >= 20) return;
+    const style = el.getAttribute("style") || "";
+    const hidden = el.hasAttribute("hidden") || HIDDEN_STYLE.test(style) || WHITE_TEXT.test(style);
+    if (!hidden) return;
+    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (text) facts.hiddenSnippets.push(text.slice(0, 200));
+  });
+
+  // Visible text, with scripts, styles and hidden blocks removed first.
+  const clone = doc.body ? doc.body.cloneNode(true) : null;
+  if (clone) {
+    clone.querySelectorAll("script, style, head, title").forEach((el) => el.remove());
+    facts.visibleText = (clone.textContent || "").replace(/\s+/g, " ").trim();
+  }
+  return facts;
+}
+
+/* ===========================================================================
+   Analyzer 1 — sender identity.
+
+   One question: does the identity the message PRESENTS agree with the
+   identity it was SENT FROM? Findings describe the discrepancy and leave the
+   judgement to the reader.
+   ======================================================================== */
+
+const EMAIL_IN_TEXT = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+const BUSINESS_CONTEXT = /\b(invoice|payment|payroll|wire|bank|purchase order|remittance|it (?:desk|support|department)|help ?desk|security team|account team)\b/i;
+
+function analyseSender(parsed, ctx) {
+  const signals = [];
+  const sender = parsed.fromAddress;
+  const senderDomain = sender.domain;
+  const display = sender.displayName || "";
+  const orgDomain = registrableDomain(ctx.organizationDomain);
+
+  if (!sender.address || !sender.address.includes("@")) {
+    signals.push(signal("from_missing",
+      "The message has no parsable From address.",
+      `From: ${parsed.header("From") || "(absent)"}`));
+    return signals;
+  }
+
+  const inDisplay = display.match(EMAIL_IN_TEXT) || [];
+  for (const candidate of inDisplay) {
+    if (candidate.toLowerCase() !== sender.address.toLowerCase()) {
+      signals.push(signal("display_name_spoofed_address",
+        `The display name reads as ${candidate}, but the message was sent from ${sender.address}.`,
+        `Display name: ${display}`, `Actual address: ${sender.address}`));
+      break;
+    }
+  }
+
+  const claimed = brandClaimedIn(display);
+  let brandHit = null;
+  for (const brand of claimed) {
+    if (!brandDomains(brand).includes(registrableDomain(senderDomain))) {
+      brandHit = brand;
+      const title = brand.replace(/\b\w/g, (c) => c.toUpperCase());
+      signals.push(signal("display_name_brand_mismatch",
+        `The display name presents this as ${title}, but the message was sent from ${senderDomain}, which is not a domain ${title} sends from.`,
+        `Display name: ${display}`, `Sending domain: ${senderDomain}`));
+      break;
+    }
+  }
+
+  if (!brandHit && orgDomain) {
+    const orgName = orgDomain.split(".")[0];
+    if (orgName.length >= 4 && display.toLowerCase().includes(orgName) &&
+        !sameRegistrableDomain(senderDomain, orgDomain)) {
+      signals.push(signal("display_name_brand_mismatch",
+        `The display name refers to ${orgName}, but the message came from ${senderDomain} rather than ${orgDomain}.`,
+        `Display name: ${display}`, `Sending domain: ${senderDomain}`));
+    }
+  }
+
+  if (orgDomain && isLookalike(senderDomain, orgDomain)) {
+    signals.push(signal("sender_lookalike_org_domain",
+      `The sending domain ${registrableDomain(senderDomain)} closely resembles your organisation's domain ${orgDomain} without being it.`,
+      `Sending domain: ${registrableDomain(senderDomain)}`, `Organisation domain: ${orgDomain}`));
+  } else {
+    for (const [brand, legit] of Object.entries(KNOWN_BRANDS)) {
+      if (legit.includes(registrableDomain(senderDomain))) break;
+      const match = legit.find((d) => isLookalike(senderDomain, d));
+      if (match) {
+        const title = brand.replace(/\b\w/g, (c) => c.toUpperCase());
+        signals.push(signal("sender_lookalike_brand_domain",
+          `The sending domain ${registrableDomain(senderDomain)} resembles ${match}, a domain used by ${title}.`,
+          `Sending domain: ${registrableDomain(senderDomain)}`, `Imitated domain: ${match}`));
+        break;
+      }
+    }
+  }
+
+  const replyTo = parsed.replyTo;
+  if (replyTo && replyTo.address && !sameRegistrableDomain(replyTo.domain, senderDomain)) {
+    signals.push(signal("reply_to_mismatch",
+      `Replies to this message go to ${replyTo.address} on ${registrableDomain(replyTo.domain)}, not to ${registrableDomain(senderDomain)}.`,
+      `From: ${sender.address}`, `Reply-To: ${replyTo.address}`));
+  }
+
+  const returnPath = parsed.returnPath;
+  if (returnPath && returnPath.address && returnPath.address.includes("@") &&
+      !sameRegistrableDomain(returnPath.domain, senderDomain)) {
+    signals.push(signal("return_path_mismatch",
+      `The bounce address is on ${registrableDomain(returnPath.domain)} while the message claims to come from ${registrableDomain(senderDomain)}.`,
+      `From: ${sender.address}`, `Return-Path: ${returnPath.address}`));
+  }
+
+  if (orgDomain && sameRegistrableDomain(senderDomain, orgDomain)) {
+    const failures = [["SPF", parsed.auth.spf], ["DKIM", parsed.auth.dkim], ["DMARC", parsed.auth.dmarc]]
+      .filter(([, v]) => v === "FAIL" || v === "SOFTFAIL").map(([n]) => n);
+    if (failures.length) {
+      signals.push(signal("org_domain_spoof_unauthenticated",
+        `The message claims to come from your own domain (${orgDomain}) but failed ${failures.join(", ")}.`,
+        `From: ${sender.address}`, `Failed checks: ${failures.join(", ")}`));
+    }
+  }
+
+  if (isFreemail(senderDomain)) {
+    const contextText = `${display} ${parsed.subject}`;
+    if (claimed.length || BUSINESS_CONTEXT.test(contextText)) {
+      signals.push(signal("freemail_sender_business_context",
+        `The message presents itself as business correspondence but was sent from a personal mailbox on ${registrableDomain(senderDomain)}.`,
+        `From: ${sender.toString()}`, `Subject: ${parsed.subject.slice(0, 120)}`));
+    }
+  }
+
+  return signals;
+}
+
+/* ===========================================================================
+   Analyzer 2 — headers and authentication.
+
+   SPF, DKIM and DMARC verdicts are read from the Authentication-Results
+   header the RECEIVING system added. That header is only trustworthy if a
+   server you control wrote it, so these are treated as supporting evidence —
+   never as proof, and a pass is never a clean bill of health.
+   ======================================================================== */
+
+const REPLY_PREFIX = /^\s*(re|fw|fwd|aw|tr)\s*[:\]]/i;
+const MESSAGE_ID_DOMAIN = /@([A-Za-z0-9.\-]+)>?\s*$/;
+
+function analyseHeaders(parsed, ctx) {
+  const signals = [];
+  const auth = parsed.auth;
+
+  if (auth.dmarc === "FAIL") {
+    signals.push(signal("dmarc_fail",
+      "The receiving mail system recorded a DMARC failure for this message.",
+      `Authentication-Results: DMARC=${auth.dmarc}`));
+  }
+  if (auth.spf === "FAIL") {
+    signals.push(signal("spf_fail",
+      `SPF failed: the sending server is not listed as authorised for ${registrableDomain(parsed.senderDomain) || "the sender domain"}.`,
+      `Authentication-Results: SPF=${auth.spf}`));
+  } else if (auth.spf === "SOFTFAIL") {
+    signals.push(signal("spf_softfail",
+      "SPF returned a soft failure for the sending server.",
+      `Authentication-Results: SPF=${auth.spf}`));
+  }
+  if (auth.dkim === "FAIL") {
+    signals.push(signal("dkim_fail",
+      "The DKIM signature on this message did not verify.",
+      `Authentication-Results: DKIM=${auth.dkim}`));
+  }
+
+  const known = [auth.spf, auth.dkim, auth.dmarc].filter((v) => v !== "UNKNOWN");
+  if (!known.length) {
+    signals.push(signal("auth_results_missing",
+      "The message carries no SPF, DKIM or DMARC results, so authentication cannot be used as evidence in either direction."));
+  } else if (known.length < 3) {
+    const recorded = [["SPF", auth.spf], ["DKIM", auth.dkim], ["DMARC", auth.dmarc]]
+      .filter(([, v]) => v !== "UNKNOWN").map(([n, v]) => `${n}=${v}`).join(", ");
+    signals.push(signal("auth_results_partial",
+      `Only part of the authentication picture is recorded (${recorded}).`));
+  }
+
+  if (!parsed.received.length) {
+    signals.push(signal("no_received_headers",
+      "The message contains no Received headers, so there is no record of the servers that handled it."));
+  }
+
+  if (REPLY_PREFIX.test(parsed.subject || "") &&
+      !parsed.header("In-Reply-To") && !parsed.header("References")) {
+    signals.push(signal("reply_subject_without_thread",
+      "The subject is written as a reply but the message is not linked to any earlier message in the conversation.",
+      `Subject: ${parsed.subject.slice(0, 120)}`));
+  }
+
+  if (parsed.messageId && parsed.senderDomain) {
+    const match = parsed.messageId.match(MESSAGE_ID_DOMAIN);
+    if (match && !sameRegistrableDomain(match[1], parsed.senderDomain)) {
+      signals.push(signal("message_id_domain_mismatch",
+        `The Message-ID was issued by ${registrableDomain(match[1])} while the message claims to come from ${registrableDomain(parsed.senderDomain)}.`,
+        `Message-ID: ${parsed.messageId.slice(0, 160)}`));
+    }
+  }
+
+  return signals;
+}
+
+const AUTH_MEANINGS = {
+  PASS: "The sending server proved it was authorised for this domain.",
+  FAIL: "The check did not pass. Treat the sender's identity as unverified.",
+  SOFTFAIL: "The domain owner suggests this server is not authorised.",
+  NEUTRAL: "The domain owner takes no position on this server.",
+  NONE: "The domain publishes no policy for this check.",
+  TEMPERROR: "The check could not be completed at delivery time.",
+  PERMERROR: "The domain's published policy could not be evaluated.",
+  UNKNOWN: "Not recorded in this message.",
+};
+
+function authenticationSummary(parsed) {
+  return [["SPF", parsed.auth.spf], ["DKIM", parsed.auth.dkim], ["DMARC", parsed.auth.dmarc]]
+    .map(([check, verdict]) => ({
+      check, verdict, meaning: AUTH_MEANINGS[verdict] || AUTH_MEANINGS.UNKNOWN,
+    }));
+}
+
+/* ===========================================================================
+   Analyzer 3 — URLs.
+
+   EmailShield NEVER requests any URL it finds in an email. Every check below
+   runs on the text of the link. In the server version, fetching an
+   attacker-supplied URL would hand the uploader a server-side request forgery
+   primitive; here it would leak to the attacker that their message is being
+   examined. The cost is that a shortened link cannot be resolved, which the
+   report states plainly rather than guessing.
+   ======================================================================== */
+
+const TEXT_URL = /\b((?:https?|ftp):\/\/[^\s<>"'\]\)]+|www\.[a-z0-9\-._~%]+\.[a-z]{2,}(?:\/[^\s<>"'\]\)]*)?)/gi;
+const LOOKS_LIKE_HOST = /^(?:https?:\/\/)?(?:www\.)?([a-z0-9\-]+(?:\.[a-z0-9\-]+)+)/i;
+const DANGEROUS_SCHEMES = new Set(["javascript", "data", "vbscript", "file"]);
+const CREDENTIAL_PATH = /(login|signin|sign-in|account|verify|verification|secure|password|auth|update|confirm|billing|wallet|unlock|recover)/i;
+const DOWNLOAD_EXT = /\.(exe|scr|bat|cmd|com|pif|msi|ps1|vbs|js|jar|apk|dll|hta|iso|img|zip|rar|7z)($|[?#])/i;
+const STANDARD_PORTS = new Set(["", "80", "443", "8443"]);
+const MAX_URLS = 300;
+
+function splitUrl(rawUrl, text = "", source = "text") {
+  let url = (rawUrl || "").trim().replace(/^[<"']+|[>"']+$/g, "");
+  if (!url) return null;
+  url = url.replace(/[.,;:!)\u201d\u2019]+$/, "");
+  let candidate = url;
+  if (/^www\./i.test(candidate)) candidate = "http://" + candidate;
+
+  const schemeMatch = candidate.match(/^([a-z][a-z0-9+.\-]*):/i);
+  if (!schemeMatch) return null;
+  const scheme = schemeMatch[1].toLowerCase();
+
+  let host = "", port = "", path = "", query = "";
+  if (DANGEROUS_SCHEMES.has(scheme)) {
+    path = candidate.slice(scheme.length + 1);
+  } else {
+    try {
+      const parsed = new URL(candidate);
+      host = normaliseHost(parsed.hostname);
+      port = parsed.port || "";
+      path = parsed.pathname || "";
+      query = parsed.search.replace(/^\?/, "");
+    } catch (err) {
+      const authority = candidate.slice(scheme.length + 3).split(/[/?#]/)[0];
+      host = normaliseHost(authority);
+    }
+  }
+
+  return {
+    url, scheme, host, port, path, query, text, source,
+    get registrable() { return registrableDomain(this.host); },
+    get display() { return this.url.length <= 200 ? this.url : this.url.slice(0, 197) + "..."; },
+  };
+}
+
+function extractUrls(parsed, facts) {
+  facts = facts || inspectHtml(parsed.htmlBody);
+  const urls = [];
+  const seen = new Set();
+
+  for (const link of facts.links) {
+    const item = splitUrl(link.href, link.text, "html");
+    if (!item) continue;
+    const key = item.url.toLowerCase() + "|" + item.text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    urls.push(item);
+    if (urls.length >= MAX_URLS) return urls;
+  }
+
+  const body = parsed.textBody || "";
+  let match;
+  TEXT_URL.lastIndex = 0;
+  while ((match = TEXT_URL.exec(body)) !== null) {
+    const item = splitUrl(match[1], "", "text");
+    if (!item) continue;
+    const key = item.url.toLowerCase() + "|";
+    if (seen.has(key)) continue;
+    seen.add(key);
+    urls.push(item);
+    if (urls.length >= MAX_URLS) break;
+  }
+
+  return urls;
+}
+
+function anchorClaimsHost(text) {
+  text = (text || "").trim();
+  // "Click here to sign in" promises nothing checkable; only anchor text that
+  // is itself a single address-like token makes a claim we can test.
+  if (!text || /\s/.test(text)) return "";
+  const match = text.match(LOOKS_LIKE_HOST);
+  if (!match) return "";
+  const host = normaliseHost(match[1]);
+  if (!/\.[a-z]{2,}$/i.test(host)) return "";      // so "version 2.1" is not a host
+  return host;
+}
+
+function analyseUrls(parsed, ctx, urls) {
+  urls = urls || extractUrls(parsed);
+  if (!urls.length) return [];
+
+  const orgDomain = registrableDomain(ctx.organizationDomain);
+  const hits = {}, details = {};
+
+  function record(ruleId, detail, ...evidence) {
+    if (!hits[ruleId]) { hits[ruleId] = []; details[ruleId] = detail; }
+    for (const item of evidence) {
+      if (item && !hits[ruleId].includes(item) && hits[ruleId].length < 6) hits[ruleId].push(item);
+    }
+  }
+
+  const brandNames = new Set(Object.keys(KNOWN_BRANDS).filter((b) => !b.includes(" ")));
+  if (orgDomain) brandNames.add(orgDomain.split(".")[0]);
+  const allBrandDomains = new Set(Object.values(KNOWN_BRANDS).flat());
+
+  for (const url of urls) {
+    const host = url.host;
+    const registrable = url.registrable;
+
+    if (DANGEROUS_SCHEMES.has(url.scheme)) {
+      record("url_dangerous_scheme",
+        `A link uses the ${url.scheme}: scheme, which is not a link to a web page.`,
+        url.display);
+      continue;
+    }
+    if (!["http", "https", "ftp"].includes(url.scheme)) continue;
+
+    const claimed = anchorClaimsHost(url.text);
+    if (claimed && host && !sameRegistrableDomain(claimed, host)) {
+      record("link_text_mismatch",
+        "A link displays one address but points somewhere else.",
+        `Visible: ${url.text.slice(0, 120)}`, `Destination: ${url.display}`);
+    }
+
+    if (host && isIpLiteral(host)) {
+      record("url_ip_literal",
+        "A link points at a numeric address rather than a domain name.", url.display);
+    } else if (host) {
+      if (hasPunycode(host) || hasNonAscii(host)) {
+        record("url_punycode",
+          "A link uses an internationalised domain that can render as characters resembling Latin letters.",
+          `${url.display} (host: ${host})`);
+      }
+      if (isShortener(host)) {
+        record("url_shortener",
+          "A link uses a shortening service, so its destination is not visible in the message. EmailShield does not open links, so it cannot be resolved here.",
+          url.display);
+      }
+      if (orgDomain && isLookalike(host, orgDomain)) {
+        record("url_lookalike_domain",
+          `A link uses a domain that imitates ${orgDomain}.`,
+          `${registrable} (imitating ${orgDomain})`);
+      } else {
+        for (const [, legit] of Object.entries(KNOWN_BRANDS)) {
+          if (legit.includes(registrable)) break;
+          const match = legit.find((d) => isLookalike(host, d));
+          if (match) {
+            record("url_lookalike_domain",
+              `A link uses a domain that imitates ${match}.`,
+              `${registrable} (imitating ${match})`);
+            break;
+          }
+        }
+      }
+
+      const labels = subdomainLabels(host);
+      const trustedInSubdomain = [...brandNames].filter((name) =>
+        labels.some((label) => name === label || (name.length >= 4 && label.includes(name))));
+      if (trustedInSubdomain.length && !allBrandDomains.has(registrable) && registrable !== orgDomain) {
+        record("url_brand_in_subdomain",
+          `A familiar name appears early in the address while the site that actually receives the request is ${registrable}.`,
+          url.display, `Actual site: ${registrable}`);
+      }
+
+      if (labels.length >= 4) {
+        record("url_excessive_subdomains",
+          `A link uses ${labels.length} levels of subdomain, which pushes the real domain out of easy view.`,
+          url.display);
+      }
+    }
+
+    const authority = url.url.includes("//") ? url.url.split("//", 2)[1].split("/")[0] : "";
+    if (authority.includes("@")) {
+      record("url_userinfo_obfuscation",
+        "A link places text before an @ sign, so it reads as one site while the browser visits another.",
+        url.display, `Actual destination: ${host}`);
+    }
+
+    if (url.port && !STANDARD_PORTS.has(url.port)) {
+      record("url_nonstandard_port",
+        `A link connects on port ${url.port} rather than a standard web port.`, url.display);
+    }
+
+    let decoded = url.url;
+    try { decoded = decodeURIComponent(url.url); } catch (err) { /* malformed escape */ }
+    if (decoded !== url.url && (/%[0-9a-f]{2}/i.test(decoded) || authority.includes("%"))) {
+      record("url_suspicious_encoding",
+        "A link contains encoded characters that hide part of its real destination.",
+        url.display, `Decoded: ${decoded.slice(0, 160)}`);
+    }
+
+    if (url.scheme === "http" && CREDENTIAL_PATH.test(url.path + url.query)) {
+      record("url_insecure_credentials_page",
+        "A sign-in or verification link is sent over plain HTTP, so anything entered there is not encrypted.",
+        url.display);
+    }
+
+    if (DOWNLOAD_EXT.test(url.path)) {
+      record("url_direct_file_download",
+        "A link points straight at a program or archive file.", url.display);
+    }
+  }
+
+  return Object.entries(hits).map(([ruleId, evidence]) =>
+    signal(ruleId, details[ruleId], ...evidence));
+}
+
+function urlTable(urls) {
+  return urls.slice(0, 100).map((url) => ({
+    url: url.display,
+    text: url.text || "(no visible text)",
+    host: url.host || "(none)",
+    registrable: url.registrable || "(none)",
+    scheme: url.scheme,
+    source: url.source,
+  }));
+}
+
+/* ===========================================================================
+   Analyzer 4 — message language.
+
+   Keyword matching alone cannot decide whether a message is phishing: a real
+   password-reset notice contains the same words as a fake one. These rules
+   are weighted 3-12 points and capped at 25 for the whole category, so
+   language never drives the score on its own. Each family needs a multi-word
+   phrase or corroboration before it fires.
+   ======================================================================== */
+
+const CONTENT_PATTERNS = {
+  urgency: [
+    /\bact (?:now|immediately|fast)\b/i,
+    /\bimmediate(?:ly)? (?:action|attention|response) (?:is )?(?:required|needed)\b/i,
+    /\burgent(?:ly)?\b/i,
+    /\bfinal (?:warning|notice|reminder)\b/i,
+    /\bwithin \d{1,2} (?:hours?|minutes?|days?)\b/i,
+    /\bexpires? (?:today|tomorrow|in \d+)\b/i,
+    /\btime[- ]sensitive\b/i,
+    /\bdo not (?:ignore|delay)\b/i,
+    /\blast chance\b/i,
+  ],
+  credentials: [
+    /\bverify your (?:account|identity|email|password|credentials|information)\b/i,
+    /\bconfirm your (?:account|identity|password|credentials|details)\b/i,
+    /\b(?:re-?)?enter your (?:password|credentials|login|username)\b/i,
+    /\bupdate your (?:password|credentials|account details|security information)\b/i,
+    /\bsign in (?:here|now|to (?:continue|verify|avoid))\b/i,
+    /\blog ?in (?:here|now|immediately)\b/i,
+    /\bvalidate your (?:account|mailbox|credentials)\b/i,
+    /\breactivate your (?:account|mailbox)\b/i,
+    /\bpassword (?:will )?expires?\b/i,
+  ],
+  threat: [
+    /\baccount (?:will be|has been) (?:suspended|disabled|locked|closed|terminated)\b/i,
+    /\bsuspend(?:ed|ing)? your (?:account|access|mailbox)\b/i,
+    /\bpermanently (?:delete|remove|close)\b/i,
+    /\bloss of (?:access|service|data)\b/i,
+    /\bfailure to (?:comply|respond|act)\b/i,
+    /\blegal action\b/i,
+    /\bunauthori[sz]ed (?:login|access|sign-?in) (?:attempt|detected)\b/i,
+  ],
+  financial: [
+    /\bgift ?cards?\b/i,
+    /\bwire transfer\b/i,
+    /\bbank(?:ing)? (?:details|information|account number)\b/i,
+    /\bpayment (?:is )?(?:overdue|pending|required|failed)\b/i,
+    /\bupdate your (?:billing|payment) (?:details|information|method)\b/i,
+    /\binvoice attached\b/i,
+    /\boutstanding (?:balance|invoice|payment)\b/i,
+    /\bremittance advice\b/i,
+    /\bpurchase (?:order|the cards)\b/i,
+    /\bcrypto(?:currency)?|bitcoin wallet\b/i,
+  ],
+  authority: [
+    /\b(?:it|service) (?:desk|department|support|helpdesk)\b/i,
+    /\bsecurity team\b/i,
+    /\bsystem administrator\b/i,
+    /\bhelp ?desk\b/i,
+    /\bhuman resources\b/i,
+    /\bpayroll (?:department|team|update)\b/i,
+    /\bmicrosoft (?:account|security|office)\b/i,
+    /\bgoogle (?:account|security)\b/i,
+    /\baccount(?:s)? (?:team|services)\b/i,
+    /\bcompliance (?:team|department)\b/i,
+  ],
+};
+
+const GENERIC_GREETINGS = /\b(dear (?:customer|user|client|member|sir(?:\/| or )?madam|account holder|valued (?:customer|client)|email (?:user|account owner)))\b|\bhello,?\s*$|\battention:? (?:user|customer|account holder)\b/im;
+
+function matchFamily(text, family) {
+  const found = [];
+  for (const pattern of CONTENT_PATTERNS[family]) {
+    const match = text.match(pattern);
+    if (match) {
+      const phrase = match[0].trim();
+      if (!found.some((f) => f.toLowerCase() === phrase.toLowerCase())) found.push(phrase);
+    }
+    if (found.length >= 4) break;
+  }
+  return found;
+}
+
+function contentEvidence(text, phrases, limit = 3) {
+  const lowered = text.toLowerCase();
+  return phrases.slice(0, limit).map((phrase) => {
+    const index = lowered.indexOf(phrase.toLowerCase());
+    if (index < 0) return phrase;
+    const start = Math.max(0, index - 40);
+    const end = Math.min(text.length, index + phrase.length + 40);
+    const excerpt = text.slice(start, end).replace(/\s+/g, " ").trim();
+    return `${start > 0 ? "..." : ""}${excerpt}${end < text.length ? "..." : ""}`;
+  });
+}
+
+function analyseContent(parsed, ctx, facts) {
+  facts = facts || inspectHtml(parsed.htmlBody);
+  const body = parsed.textBody || facts.visibleText || "";
+  const text = `${parsed.subject}\n${body}`.slice(0, 100000);
+  if (!text.trim()) return [];
+
+  const signals = [];
+
+  const credentials = matchFamily(text, "credentials");
+  if (credentials.length) {
+    signals.push(signal("content_credential_request",
+      "The message asks the recipient to supply or confirm account credentials.",
+      ...contentEvidence(text, credentials)));
+  }
+
+  const urgency = matchFamily(text, "urgency");
+  if (urgency.length >= 2 || (urgency.length && credentials.length)) {
+    signals.push(signal("content_urgency",
+      "The message pressures the recipient to act quickly.",
+      ...contentEvidence(text, urgency)));
+  }
+
+  const threat = matchFamily(text, "threat");
+  if (threat.length) {
+    signals.push(signal("content_threat_consequence",
+      "The message warns of account suspension, loss of access or other consequences if the recipient does not act.",
+      ...contentEvidence(text, threat)));
+  }
+
+  const financial = matchFamily(text, "financial");
+  if (financial.length >= 2 || (financial.length && (urgency.length || credentials.length))) {
+    signals.push(signal("content_financial_request",
+      "The message involves payments, banking details or gift cards.",
+      ...contentEvidence(text, financial)));
+  }
+
+  const authority = matchFamily(text, "authority");
+  if (authority.length && (credentials.length || urgency.length || threat.length)) {
+    signals.push(signal("content_authority_impersonation",
+      "The message presents itself as coming from an authority the recipient is expected to comply with.",
+      ...contentEvidence(text, authority)));
+  }
+
+  const greeting = body.slice(0, 1000).match(GENERIC_GREETINGS);
+  if (greeting && (credentials.length || threat.length || urgency.length)) {
+    signals.push(signal("content_generic_greeting",
+      "The message opens with a generic greeting rather than addressing the recipient by name.",
+      greeting[0].replace(/\s+/g, " ").trim()));
+  }
+
+  if (facts.formActions.length) {
+    const evidence = facts.formActions.slice(0, 3).map((a) => `Form submits to: ${a.slice(0, 160)}`);
+    if (facts.hasPasswordInput) evidence.push("The form contains a password field.");
+    signals.push(signal("content_html_form",
+      `The HTML body contains ${facts.formActions.length} data-entry form(s) with ${facts.inputCount} input field(s).`,
+      ...evidence));
+  }
+
+  if (facts.hiddenSnippets.length) {
+    signals.push(signal("content_hidden_text",
+      `The HTML body contains ${facts.hiddenSnippets.length} block(s) of text styled so they are not visible when the message is read.`,
+      ...facts.hiddenSnippets.slice(0, 3).map((s) => `Hidden: ${s}`)));
+  }
+
+  return signals;
+}
+
+/* ===========================================================================
+   Analyzer 5 — attachments, metadata only.
+
+   Attachments are never written to disk, never opened, never executed and
+   never scanned by a signature engine, because there isn't one. The report
+   says "Malware scanning: Not configured" rather than implying a clean
+   result. What this does is classify the DECLARED file type, which is enough
+   to catch the common delivery patterns.
+   ======================================================================== */
+
+const EXECUTABLE_EXTENSIONS = new Set(["exe","scr","bat","cmd","com","pif","msi","msp","cpl","jar","ps1","psm1","vbs","vbe","js","jse","wsf","wsh","hta","scf","lnk","reg","dll","sys","apk","app","gadget","inf","iso","img"]);
+const MACRO_EXTENSIONS = new Set(["docm","dotm","xlsm","xltm","xlam","pptm","potm","ppam","xls","doc"]);
+const ARCHIVE_EXTENSIONS = new Set(["zip","rar","7z","tar","gz","bz2","cab","ace","z"]);
+const HTML_EXTENSIONS = new Set(["html","htm","shtml","xhtml","svg"]);
+const MACRO_CONTENT_TYPES = new Set([
+  "application/vnd.ms-word.document.macroenabled.12",
+  "application/vnd.ms-excel.sheet.macroenabled.12",
+  "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+  "application/vnd.ms-excel", "application/msword",
+]);
+const DECOY_EXTENSIONS = new Set(["pdf","doc","docx","xls","xlsx","ppt","pptx","txt","jpg","jpeg","png","gif","csv","rtf","htm","html","zip","eml","msg"]);
+
+function fileExtensions(filename) {
+  return [...(filename || "").matchAll(/\.([A-Za-z0-9]{1,8})/g)].map((m) => m[1].toLowerCase());
+}
+
+function humanSize(size) {
+  let value = Number(size);
+  const units = ["B", "KB", "MB", "GB"];
+  for (const unit of units) {
+    if (value < 1024 || unit === "GB") {
+      return unit === "B" ? `${Math.round(value)} B` : `${value.toFixed(1)} ${unit}`;
+    }
+    value /= 1024;
+  }
+  return `${size} B`;
+}
+
+function classifyAttachment(filename, contentType) {
+  const extensions = fileExtensions(filename);
+  const last = extensions.length ? extensions[extensions.length - 1] : "";
+  contentType = (contentType || "").toLowerCase();
+  if (EXECUTABLE_EXTENSIONS.has(last)) return "executable";
+  if (MACRO_EXTENSIONS.has(last) || MACRO_CONTENT_TYPES.has(contentType)) return "macro";
+  if (HTML_EXTENSIONS.has(last)) return "html";
+  if (ARCHIVE_EXTENSIONS.has(last)) return "archive";
+  return "other";
+}
+
+function hasDoubleExtension(filename) {
+  const extensions = fileExtensions(filename);
+  if (extensions.length < 2) return false;
+  const first = extensions[extensions.length - 2];
+  const last = extensions[extensions.length - 1];
+  return DECOY_EXTENSIONS.has(first) &&
+    (EXECUTABLE_EXTENSIONS.has(last) || MACRO_EXTENSIONS.has(last) || HTML_EXTENSIONS.has(last));
+}
+
+const ATTACHMENT_DESCRIPTIONS = {
+  attachment_double_extension: "An attachment uses two extensions, so the file type shown to the user is not the type that will run.",
+  attachment_dangerous_extension: "An attachment is a file type that executes code when opened.",
+  attachment_macro_office: "An attachment uses an Office format that can contain macros.",
+  attachment_html: "An attachment is a web page, which opens in the browser and can present a sign-in form locally.",
+  attachment_archive: "An attachment is an archive, so its contents are not visible to mail filtering until extracted.",
+};
+
+function analyseAttachments(parsed) {
+  if (!parsed.attachments.length) return [];
+  const byRule = {};
+
+  for (const attachment of parsed.attachments) {
+    const name = attachment.filename;
+    const label = `${name} (${attachment.contentType}, ${humanSize(attachment.size)})`;
+    const kind = classifyAttachment(name, attachment.contentType);
+    let ruleId = null;
+    if (hasDoubleExtension(name)) ruleId = "attachment_double_extension";
+    else if (kind === "executable") ruleId = "attachment_dangerous_extension";
+    else if (kind === "macro") ruleId = "attachment_macro_office";
+    else if (kind === "html") ruleId = "attachment_html";
+    else if (kind === "archive") ruleId = "attachment_archive";
+    if (ruleId) (byRule[ruleId] = byRule[ruleId] || []).push(label);
+  }
+
+  return Object.entries(byRule).map(([ruleId, files]) =>
+    signal(ruleId, ATTACHMENT_DESCRIPTIONS[ruleId], ...files.slice(0, 4)));
+}
+
+function attachmentTable(parsed) {
+  return parsed.attachments.map((attachment) => {
+    const kind = classifyAttachment(attachment.filename, attachment.contentType);
+    const risky = ["executable", "macro", "html"].includes(kind) || hasDoubleExtension(attachment.filename);
+    return {
+      filename: attachment.filename,
+      contentType: attachment.contentType,
+      size: humanSize(attachment.size),
+      sha256: attachment.sha256,
+      kind, risky,
+    };
+  });
+}
+
+/* ===========================================================================
+   Scoring engine.
+
+   1. Analyzers emit signals.
+   2. Duplicate rule IDs are merged, keeping all evidence.
+   3. Points are summed PER CATEGORY and clamped to that category's cap,
+      heaviest findings first — so a message with eleven bad links cannot
+      outweigh everything else.
+   4. Category subtotals are summed and clamped to 100.
+   ======================================================================== */
+
+const ENGINE_VERSION = "1.0.0";
+
+function dedupeSignals(signals) {
+  const merged = new Map();
+  for (const item of signals) {
+    if (!RULES[item.ruleId]) continue;
+    if (!merged.has(item.ruleId)) {
+      merged.set(item.ruleId, { ruleId: item.ruleId, detail: item.detail, evidence: item.evidence.slice() });
+    } else {
+      const existing = merged.get(item.ruleId);
+      for (const evidence of item.evidence) {
+        if (!existing.evidence.includes(evidence) && existing.evidence.length < 8) {
+          existing.evidence.push(evidence);
+        }
+      }
+    }
+  }
+  return [...merged.values()];
+}
+
+function scoreSignals(signals) {
+  const findings = [];
+  const byCategory = {};
+
+  for (const item of dedupeSignals(signals)) {
+    const rule = RULES[item.ruleId];
+    const finding = {
+      ruleId: rule.ruleId,
+      category: rule.category,
+      categoryLabel: CATEGORY_LABELS[rule.category] || rule.category,
+      title: rule.title,
+      severity: rule.severity,
+      points: rule.points,
+      countedPoints: rule.points,
+      detail: item.detail,
+      why: rule.why,
+      evidence: item.evidence.slice(),
+    };
+    findings.push(finding);
+    (byCategory[rule.category] = byCategory[rule.category] || []).push(finding);
+  }
+
+  const categories = [];
+  let total = 0;
+
+  for (const [category, items] of Object.entries(byCategory)) {
+    const cap = CATEGORY_CAPS[category] != null ? CATEGORY_CAPS[category] : 100;
+    // Heaviest findings keep their full value when a cap bites, so the score
+    // always rests on the strongest evidence.
+    items.sort((a, b) => (b.points - a.points) || (SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]));
+    const raw = items.reduce((sum, f) => sum + f.points, 0);
+    let remaining = cap;
+    for (const finding of items) {
+      const counted = Math.min(finding.points, Math.max(0, remaining));
+      finding.countedPoints = counted;
+      remaining -= counted;
+    }
+    const countedTotal = Math.min(raw, cap);
+    total += countedTotal;
+    categories.push({
+      category,
+      label: CATEGORY_LABELS[category] || category,
+      rawPoints: raw,
+      countedPoints: countedTotal,
+      cap,
+      findingCount: items.length,
+    });
+  }
+
+  const score = Math.min(total, MAX_SCORE);
+  findings.sort((a, b) =>
+    (SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]) ||
+    (b.points - a.points) ||
+    a.title.localeCompare(b.title));
+  categories.sort((a, b) => b.countedPoints - a.countedPoints);
+  return { score, findings, categories };
+}
+
+function buildSummary(score, bandLabel, findings) {
+  if (!findings.length) {
+    return "No phishing indicators were detected. This does not prove the message is safe — it means none of the checks below matched.";
+  }
+  const strong = findings.filter((f) => f.severity === "high" || f.severity === "medium");
+  const lead = (strong.length ? strong : findings).slice(0, 2);
+  const names = lead.map((f) => f.title.toLowerCase()).join(" and ");
+  const count = findings.length;
+  const noun = count === 1 ? "indicator" : "indicators";
+  return `EmailShield found ${count} ${noun} in this message, including ${names}. ` +
+    `Together they score ${score} out of 100, which falls in the ${bandLabel.toLowerCase()} band.`;
+}
+
+function analyseEmail(parsed, ctx) {
+  const facts = inspectHtml(parsed.htmlBody);
+  const urls = extractUrls(parsed, facts);
+
+  const signals = [
+    ...analyseSender(parsed, ctx),
+    ...analyseHeaders(parsed, ctx),
+    ...analyseUrls(parsed, ctx, urls),
+    ...analyseContent(parsed, ctx, facts),
+    ...analyseAttachments(parsed),
+  ];
+
+  const { score, findings, categories } = scoreSignals(signals);
+  const band = bandForScore(score);
+
+  const interestingHeaders = new Set([
+    "from","to","cc","reply-to","return-path","subject","date","message-id",
+    "authentication-results","received-spf","received","mime-version",
+    "content-type","x-mailer","user-agent","x-priority","list-unsubscribe",
+    "in-reply-to","references","dkim-signature",
+  ]);
+
+  return {
+    score,
+    bandKey: band.key,
+    bandLabel: band.label,
+    recommendedAction: band.action,
+    summary: buildSummary(score, band.label, findings),
+    findings,
+    categories,
+    sender: {
+      displayName: parsed.fromAddress.displayName || "(none)",
+      address: parsed.fromAddress.address || "(none)",
+      domain: registrableDomain(parsed.senderDomain) || "(none)",
+      replyTo: parsed.replyTo ? parsed.replyTo.address : "",
+      returnPath: parsed.returnPath ? parsed.returnPath.address : "",
+      to: parsed.toAddresses.slice(0, 5).map((a) => a.address).join(", ") || "(none)",
+      organizationDomain: ctx.organizationDomain || "(not configured)",
+      subject: parsed.subject || "(no subject)",
+      date: parsed.dateRaw || "(not set)",
+    },
+    authentication: authenticationSummary(parsed),
+    urls: urlTable(urls),
+    attachments: attachmentTable(parsed),
+    headers: parsed.headers.filter(([name]) => interestingHeaders.has(name.toLowerCase())).slice(0, 60),
+    metadata: {
+      threatIntelligence: "Not configured",
+      malwareScanning: "Not configured",
+      engineVersion: ENGINE_VERSION,
+    },
+  };
+}
+
+/* ===========================================================================
+   HTML sanitiser.
+
+   The sharpest edge in the application: showing a person the contents of a
+   message written to attack whoever displays it. Three independent layers
+   apply and each is sufficient alone.
+
+   Layer 1 (here): rebuild the document from an allowlist. Tags that can carry
+   behaviour are dropped WITH THEIR CONTENTS, every attribute except a short
+   layout allowlist is discarded (which removes every on* handler and every
+   style without enumerating them), <img> is removed so tracking pixels cannot
+   fire, and href is stripped — destinations are printed as adjacent text, so
+   nothing in a preview is clickable.
+
+   Layer 2: the result is rendered inside an iframe with sandbox="" (opaque
+   origin, scripts refused even if this were bypassed) carrying its own CSP.
+
+   Layer 3: this page's own CSP, which has no unsafe-inline for scripts.
+   ======================================================================== */
+
+const ALLOWED_TAGS = new Set([
+  "p","br","div","span","b","strong","i","em","u","s","strike","ul","ol","li",
+  "dl","dt","dd","table","thead","tbody","tfoot","tr","td","th","caption",
+  "h1","h2","h3","h4","h5","h6","blockquote","pre","code","hr","small","sub",
+  "sup","abbr","address","article","section","header","footer","main","figure",
+  "figcaption","center","big","tt",
+]);
+
+const DROP_WITH_CONTENT = new Set([
+  "script","style","head","title","iframe","object","embed","applet","frame",
+  "frameset","noframes","noscript","template","svg","math","canvas","audio",
+  "video","source","track","map","area","base","link","meta","form","input",
+  "button","select","option","textarea","label","fieldset","legend","datalist",
+  "output","progress","meter","dialog","slot","portal","xml",
+]);
+
+const SANITISER_DANGEROUS_SCHEMES = new Set(["javascript","vbscript","data","file","blob","about"]);
+
+const ALLOWED_ATTRIBUTES = {
+  td: new Set(["colspan","rowspan"]),
+  th: new Set(["colspan","rowspan","scope"]),
+  abbr: new Set(["title"]),
+};
+
+const SAFE_ATTR_VALUE = /^[A-Za-z0-9 _.,:;/()\-]{0,120}$/;
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function sanitizeHtml(html) {
+  const dropped = new Set();
+  if (!html || !html.trim()) return { html: "", dropped: [] };
+
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(html, "text/html");
+  } catch (err) {
+    return { html: "", dropped: ["(unparseable)"] };
+  }
+
+  const out = [];
+
+  function walk(node) {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        out.push(escapeHtml(child.nodeValue));
+        continue;
+      }
+      if (child.nodeType === Node.COMMENT_NODE) {
+        dropped.add("comment");           // conditional comments have been a bypass
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+
+      const tag = child.tagName.toLowerCase();
+
+      if (DROP_WITH_CONTENT.has(tag)) {
+        dropped.add(tag);
+        continue;                          // contents discarded with the tag
+      }
+
+      if (tag === "img") {
+        dropped.add("img");
+        const alt = child.getAttribute("alt") || "";
+        const src = child.getAttribute("src") || "";
+        const remote = /^(https?:|\/\/)/i.test(src.slice(0, 8));
+        out.push(`<span class="es-removed">[${escapeHtml(alt.slice(0, 80) || "image")} removed${remote ? " (remote)" : ""}]</span>`);
+        continue;
+      }
+
+      if (tag === "a") {
+        const href = (child.getAttribute("href") || "").trim();
+        out.push('<span class="es-anchor">');
+        walk(child);
+        if (href) {
+          const shown = escapeHtml(href.slice(0, 200));
+          const scheme = href.includes(":") ? href.split(":", 1)[0].trim().toLowerCase() : "";
+          // The destination is shown as escaped text — never as an href — so a
+          // reader can see where a link would have gone. A scheme that executes
+          // rather than navigates is labelled, because "javascript:..." printed
+          // bare looks like an ordinary address.
+          if (SANITISER_DANGEROUS_SCHEMES.has(scheme)) {
+            out.push(` <span class="es-href es-danger">&#8594; blocked ${escapeHtml(scheme)}: link: ${shown}</span>`);
+          } else {
+            out.push(` <span class="es-href">&#8594; ${shown}</span>`);
+          }
+        }
+        out.push("</span>");
+        continue;
+      }
+
+      if (!ALLOWED_TAGS.has(tag)) {
+        dropped.add(tag);
+        walk(child);                       // keep the text, drop the wrapper
+        continue;
+      }
+
+      const permitted = ALLOWED_ATTRIBUTES[tag];
+      let attrs = "";
+      if (permitted) {
+        for (const attr of child.attributes) {
+          const name = attr.name.toLowerCase();
+          if (!permitted.has(name)) continue;
+          if (!SAFE_ATTR_VALUE.test(attr.value)) continue;
+          attrs += ` ${name}="${escapeHtml(attr.value)}"`;
+        }
+      }
+      if (child.attributes.length && Object.keys(child.attributes).length) {
+        for (const attr of child.attributes) {
+          const name = attr.name.toLowerCase();
+          if (name.startsWith("on")) dropped.add("event handler");
+          if (name === "style") dropped.add("style attribute");
+        }
+      }
+
+      if (tag === "br" || tag === "hr") { out.push(`<${tag}>`); continue; }
+      out.push(`<${tag}${attrs}>`);
+      walk(child);
+      out.push(`</${tag}>`);
+    }
+  }
+
+  walk(doc.body || doc.documentElement);
+  return { html: out.join(""), dropped: [...dropped].sort() };
+}
+
+function textToHtml(text) {
+  if (!text) return "";
+  return "<p>" + escapeHtml(text).replace(/\r?\n\r?\n/g, "</p><p>").replace(/\r?\n/g, "<br>") + "</p>";
+}
+
+const PREVIEW_STYLE = `
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 16px; background: #fff; color: #1a222c;
+         font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         word-wrap: break-word; }
+  table { border-collapse: collapse; max-width: 100%; }
+  td, th { padding: 4px 8px; border: 1px solid #e2e6eb; }
+  img { display: none; }
+  .es-anchor { text-decoration: underline; text-decoration-style: dotted; }
+  .es-href { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+             color: #8a6100; background: #fdf6e7; padding: 1px 4px; border-radius: 3px;
+             word-break: break-all; }
+  .es-danger { color: #8e1b2b; background: #fbe6e9; font-weight: 600; }
+  .es-removed { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+                color: #5c6b7c; background: #eef1f5; padding: 1px 5px; border-radius: 3px; }
+`;
+
+/* ===========================================================================
+   Synthetic sample messages.
+
+   Every domain below is a reserved example domain and every IP address is
+   from a TEST-NET range, so nothing here resolves to a real host. Attachment
+   payloads are harmless base64 text carrying misleading extensions.
+   ======================================================================== */
+
+const SAMPLE_EMAILS = [
+  {
+    "name": "01-legitimate-newsletter.eml",
+    "label": "Legitimate notice",
+    "band": "low",
+    "raw": "Return-Path: <internal-comms@example.com>\nReceived: from mx1.example.com (mx1.example.com [192.0.2.11])\n by mail.example.com with ESMTPS id 4c9f2a1b8e\n for <dana.whitfield@example.com>; Tue, 8 Oct 2026 09:14:22 +0000 (UTC)\nReceived: from smtp-out-3.example.com (smtp-out-3.example.com [192.0.2.44])\n by mx1.example.com with ESMTPS id 8821fbc3\n for <dana.whitfield@example.com>; Tue, 8 Oct 2026 09:14:20 +0000 (UTC)\nAuthentication-Results: mx1.example.com;\n spf=pass smtp.mailfrom=example.com;\n dkim=pass header.d=example.com;\n dmarc=pass header.from=example.com\nDKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com; s=comms;\n h=from:to:subject:date:message-id; bh=synthetic-sample-not-a-real-hash=;\n b=SyntheticSignatureForTestingOnly==\nMessage-ID: <20261008091420.8821fbc3@smtp-out-3.example.com>\nDate: Tue, 8 Oct 2026 09:14:20 +0000\nFrom: Example Internal Communications <internal-comms@example.com>\nTo: Dana Whitfield <dana.whitfield@example.com>\nSubject: Building works in the east wing, 20-24 October\nMIME-Version: 1.0\nContent-Type: multipart/alternative; boundary=\"b1_legit_sample_0001\"\nX-Mailer: Example Comms Platform 4.2\n\n--b1_legit_sample_0001\nContent-Type: text/plain; charset=\"utf-8\"\nContent-Transfer-Encoding: 7bit\n\nHello Dana,\n\nRefurbishment work in the east wing runs from Monday 20 October to\nFriday 24 October. The third-floor kitchen and meeting rooms 3A to 3D\nwill be closed for the week. Bookings already in the calendar have been\nmoved automatically and you will see the new rooms in your invitations.\n\nThe full schedule, including the lift shutdown on Wednesday, is on the\nintranet: https://intranet.example.com/notices/east-wing-works\n\nFacilities will be on site each morning if you need anything moved.\n\nPriya Raman\nFacilities and Workplace, Example Ltd\n\n--b1_legit_sample_0001\nContent-Type: text/html; charset=\"utf-8\"\nContent-Transfer-Encoding: 7bit\n\n<html>\n  <body style=\"font-family: Arial, sans-serif; color: #222;\">\n    <p>Hello Dana,</p>\n    <p>Refurbishment work in the east wing runs from Monday 20 October to\n      Friday 24 October. The third-floor kitchen and meeting rooms 3A to 3D\n      will be closed for the week. Bookings already in the calendar have been\n      moved automatically and you will see the new rooms in your invitations.</p>\n    <p>The full schedule, including the lift shutdown on Wednesday, is on\n      <a href=\"https://intranet.example.com/notices/east-wing-works\">the\n      intranet</a>.</p>\n    <p>Facilities will be on site each morning if you need anything moved.</p>\n    <p>Priya Raman<br>Facilities and Workplace, Example Ltd</p>\n  </body>\n</html>\n\n--b1_legit_sample_0001--\n"
+  },
+  {
+    "name": "02-suspicious-password-expiry.eml",
+    "label": "Password expiry lure",
+    "band": "suspicious",
+    "raw": "Return-Path: <no-reply@it-helpdesk-notice.example>\nReceived: from mail.it-helpdesk-notice.example (mail.it-helpdesk-notice.example [198.51.100.77])\n by mx1.example.com with ESMTP id 71ab44de\n for <dana.whitfield@example.com>; Wed, 9 Oct 2026 03:41:09 +0000 (UTC)\nAuthentication-Results: mx1.example.com;\n spf=softfail smtp.mailfrom=it-helpdesk-notice.example;\n dmarc=none header.from=it-helpdesk-notice.example\nMessage-ID: <a7f2c1e9-3b44-4c10-9d21-5f7e11b2c003@it-helpdesk-notice.example>\nDate: Wed, 9 Oct 2026 03:41:05 +0000\nFrom: IT Service Desk <no-reply@it-helpdesk-notice.example>\nTo: dana.whitfield@example.com\nSubject: Your password expires in 24 hours\nMIME-Version: 1.0\nContent-Type: multipart/alternative; boundary=\"b2_suspicious_sample\"\n\n--b2_suspicious_sample\nContent-Type: text/plain; charset=\"utf-8\"\nContent-Transfer-Encoding: 7bit\n\nDear user,\n\nOur records show that your password expires within 24 hours. To keep\naccess to email and shared drives, please confirm your account using the\nsecure link below.\n\nhttps://cutt.ly/mail-renewal-notice\n\nIf you do not confirm your account, you may lose access to your mailbox\nuntil the service desk can process a manual reset.\n\nThank you,\nIT Service Desk\n\n--b2_suspicious_sample\nContent-Type: text/html; charset=\"utf-8\"\nContent-Transfer-Encoding: 7bit\n\n<html>\n  <body style=\"font-family: Segoe UI, Arial, sans-serif; color: #1f1f1f;\">\n    <p>Dear user,</p>\n    <p>Our records show that your <strong>password expires</strong> within\n      24 hours. To keep access to email and shared drives, please\n      confirm your account using the secure link below.</p>\n    <p><a href=\"https://cutt.ly/mail-renewal-notice\">Confirm my account</a></p>\n    <p>If you do not confirm your account, you may lose access to your\n      mailbox until the service desk can process a manual reset.</p>\n    <p>Thank you,<br>IT Service Desk</p>\n  </body>\n</html>\n\n--b2_suspicious_sample--\n"
+  },
+  {
+    "name": "03-high-risk-invoice-lure.eml",
+    "label": "Invoice / BEC lure",
+    "band": "high",
+    "raw": "Return-Path: <a.mercer.billing@gmail.com>\nReceived: from mail-sor-f41.google.com (mail-sor-f41.google.com [209.85.220.41])\n by mx1.example.com with ESMTPS id 55cd12fa\n for <dana.whitfield@example.com>; Thu, 10 Oct 2026 07:02:55 +0000 (UTC)\nAuthentication-Results: mx1.example.com;\n spf=pass smtp.mailfrom=gmail.com;\n dkim=pass header.d=gmail.com;\n dmarc=pass header.from=gmail.com\nMessage-ID: <CAF9k2x-7Qm1R8vZp@mail.gmail.com>\nDate: Thu, 10 Oct 2026 07:02:50 +0000\nFrom: \"Accounts Payable - Northgate Supplies\" <a.mercer.billing@gmail.com>\nReply-To: remittance@northgate-supplies-billing.example\nTo: dana.whitfield@example.com\nSubject: Invoice 88231 is overdue - remittance required within 24 hours\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=\"b3_invoice_outer\"\n\n--b3_invoice_outer\nContent-Type: text/plain; charset=\"utf-8\"\nContent-Transfer-Encoding: 7bit\n\nDear customer,\n\nOur accounts team has flagged an outstanding balance on invoice 88231.\nPayment is overdue and must be settled within 24 hours to avoid the\naccount being passed for legal action.\n\nOur banking details changed last month. The attached remittance sheet\ncontains the new account number - please use it for this payment and for\nany future invoices.\n\nIf payment has already been sent, reply to this message with the wire\ntransfer reference and we will trace it.\n\nRegards,\nA. Mercer\nAccounts Payable, Northgate Supplies\n\n--b3_invoice_outer\nContent-Type: application/vnd.ms-excel.sheet.macroEnabled.12; name=\"Remittance_88231.xlsm\"\nContent-Transfer-Encoding: base64\nContent-Disposition: attachment; filename=\"Remittance_88231.xlsm\"\n\nU3ludGhldGljIHRlc3QgYXR0YWNobWVudCBmb3IgRW1haWxTaGllbGQuIFRoaXMgZmlsZSBp\ncyBwbGFpbiB0ZXh0IGFuZCBjb250YWlucyBubyBtYWNyb3MsIG5vIGNvZGUgYW5kIG5vIHJl\nYWwgc3ByZWFkc2hlZXQgZGF0YS4gSXQgZXhpc3RzIG9ubHkgc28gdGhlIGF0dGFjaG1lbnQg\nYW5hbHl6ZXIgaGFzIGEgbWFjcm8tZW5hYmxlZCBmaWxlbmFtZSB0byBjbGFzc2lmeS4=\n\n--b3_invoice_outer--\n"
+  },
+  {
+    "name": "04-critical-credential-harvest.eml",
+    "label": "Credential harvest",
+    "band": "critical",
+    "raw": "Return-Path: <bounce@mail-relay-07.example>\nReceived: from unknown (203.0.113.24)\n by mx1.example.com with SMTP id 0af31c7b\n for <dana.whitfield@example.com>; Fri, 11 Oct 2026 02:17:44 +0000 (UTC)\nAuthentication-Results: mx1.example.com;\n spf=fail smtp.mailfrom=micros0ft-verify.example;\n dkim=fail header.d=micros0ft-verify.example;\n dmarc=fail header.from=micros0ft-verify.example\nMessage-ID: <9912ab44.20261011@mail-relay-07.example>\nDate: Fri, 11 Oct 2026 02:17:40 +0000\nFrom: \"Microsoft 365 Security\" <security@micros0ft-verify.example>\nReply-To: account-recovery@mail-relay-07.example\nTo: dana.whitfield@example.com\nSubject: Re: Final warning - unauthorized sign-in attempt on your account\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=\"b4_critical_outer\"\nX-Priority: 1 (Highest)\n\n--b4_critical_outer\nContent-Type: multipart/alternative; boundary=\"b4_critical_inner\"\n\n--b4_critical_inner\nContent-Type: text/plain; charset=\"utf-8\"\nContent-Transfer-Encoding: 7bit\n\nDear user,\n\nAn unauthorized sign-in attempt was detected on your account from a new\ndevice. Immediate action is required. Your account will be suspended in\n12 hours unless you verify your identity.\n\nVerify here: https://example.com.account-verify.example/login\n\nIf the sign-in was not you, review the attached activity report and\nre-enter your password to secure the mailbox.\n\nMicrosoft 365 Security Team\n\n--b4_critical_inner\nContent-Type: text/html; charset=\"utf-8\"\nContent-Transfer-Encoding: 7bit\n\n<html>\n  <body style=\"font-family: Segoe UI, Arial, sans-serif;\">\n    <p>Dear user,</p>\n    <p>An <b>unauthorized sign-in attempt</b> was detected on your account\n      from a new device. <b>Immediate action is required.</b> Your account\n      will be suspended in 12 hours unless you verify your identity.</p>\n    <p>\n      <a href=\"https://example.com.account-verify.example/login\">https://login.example.com/verify</a>\n    </p>\n    <p>Alternative link if the button does not work:\n      <a href=\"http://203.0.113.24/reset?user=dana.whitfield%40example.com\">http://203.0.113.24/reset</a>\n    </p>\n    <form action=\"http://203.0.113.24/collect\" method=\"post\">\n      <label>Email</label>\n      <input type=\"text\" name=\"email\" value=\"dana.whitfield@example.com\">\n      <label>Password</label>\n      <input type=\"password\" name=\"password\">\n      <input type=\"submit\" value=\"Verify my identity\">\n    </form>\n    <div style=\"font-size:0px; color:#ffffff;\">\n      reference bulk mailing token 41ab-9920 seed text to dilute filter scoring\n    </div>\n    <p>Microsoft 365 Security Team</p>\n  </body>\n</html>\n\n--b4_critical_inner--\n\n--b4_critical_outer\nContent-Type: application/octet-stream; name=\"Account_Activity_Report.pdf.exe\"\nContent-Transfer-Encoding: base64\nContent-Disposition: attachment; filename=\"Account_Activity_Report.pdf.exe\"\n\nU3ludGhldGljIHRlc3QgYXR0YWNobWVudCBmb3IgRW1haWxTaGllbGQuIE5vdCBhbiBleGVj\ndXRhYmxlOiB0aGlzIGZpbGUgaXMgcGxhaW4gdGV4dCB3aXRoIGEgZGVsaWJlcmF0ZWx5IGRv\ndWJsZSBleHRlbnNpb24gc28gdGhlIGF0dGFjaG1lbnQgYW5hbHl6ZXIgaGFzIHNvbWV0aGlu\nZyB0byBjbGFzc2lmeS4=\n\n--b4_critical_outer\nContent-Type: text/html; name=\"secure-login.html\"\nContent-Transfer-Encoding: base64\nContent-Disposition: attachment; filename=\"secure-login.html\"\n\nPGh0bWw+PGJvZHk+U3ludGhldGljIHRlc3QgYXR0YWNobWVudC4gTm8gZm9ybSwgbm8gc2Ny\naXB0LCBubyByZWFsIGNvbnRlbnQuPC9ib2R5PjwvaHRtbD4=\n\n--b4_critical_outer--\n"
+  }
+];
+
+function buildPreviewDocument(bodyHtml) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src 'none'; form-action 'none'; base-uri 'none'">` +
+    `<style>${PREVIEW_STYLE}</style></head><body>${bodyHtml || '<p style="color:#5c6b7c">This message has no readable body.</p>'}</body></html>`;
+}
+
+/* ===========================================================================
+   Report rendering
+   ======================================================================== */
+
+/* Meter colours are read from the CSS custom properties at render time so the
+   SVG follows the active theme instead of baking in the light palette. */
+function bandFill(key) {
+  const styles = getComputedStyle(document.documentElement);
+  const prefix = { low: "low", suspicious: "susp", high: "high", critical: "crit" }[key];
+  const read = (suffix, fallback) =>
+    (styles.getPropertyValue(`--${prefix}-${suffix}`) || "").trim() || fallback;
+  const fallbacks = {
+    low: ["#e6f3ec", "#166b4a"], suspicious: ["#fbf1dc", "#8a6100"],
+    high: ["#fbeadf", "#b04a1a"], critical: ["#fbe6e9", "#8e1b2b"],
+  }[key];
+  return [read("bg", fallbacks[0]), read("ink", fallbacks[1])];
+}
+
+const VERDICT_CLASS = {
+  PASS: "verdict-pass", FAIL: "verdict-fail", SOFTFAIL: "verdict-warn",
+  NEUTRAL: "verdict-warn", TEMPERROR: "verdict-warn", PERMERROR: "verdict-warn",
+  NONE: "verdict-none", UNKNOWN: "verdict-none",
+};
+
+function meterSvg(result) {
+  const segments = [["low","Low",0],["suspicious","Suspicious",25],["high","High",50],["critical","Critical",75]];
+  // Keep the marker triangle inside the viewBox at 0 and at 100.
+  const marker = Math.min(Math.max(result.score * 4, 6), 394);
+  const gridline = getComputedStyle(document.documentElement)
+    .getPropertyValue("--line-strong").trim() || "#c4cdd9";
+  const muted = getComputedStyle(document.documentElement)
+    .getPropertyValue("--muted").trim() || "#5c6b7c";
+  let bars = "";
+  for (const [key, label, start] of segments) {
+    const [fill, ink] = bandFill(key);
+    const active = key === result.bandKey;
+    bars += `<rect x="${start * 4}" y="14" width="100" height="13" fill="${fill}" stroke="${gridline}" stroke-width="1"></rect>` +
+      `<text x="${start * 4 + 50}" y="40" text-anchor="middle" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif" ` +
+      `fill="${active ? ink : muted}" font-weight="${active ? "600" : "400"}">${label}</text>`;
+  }
+  const ink = bandFill(result.bandKey)[1];
+  return `<svg viewBox="0 0 400 46" role="img" aria-label="Risk score ${result.score} of 100, in the ${result.bandLabel} band. Bands: low 0 to 24, suspicious 25 to 49, high 50 to 74, critical 75 to 100.">` +
+    bars +
+    `<line x1="${marker}" y1="8" x2="${marker}" y2="31" stroke="${ink}" stroke-width="2.5"></line>` +
+    `<polygon points="${marker - 5},4 ${marker + 5},4 ${marker},11" fill="${ink}"></polygon>` +
+    `</svg>`;
+}
+
+function renderFindings(findings) {
+  if (!findings.length) {
+    return `<div class="notice"><p>No indicators matched. That is not proof the message is safe —
+      it means none of the ${Object.keys(RULES).length} checks found anything to report.</p></div>`;
+  }
+  return `<ul class="findings">` + findings.map((f) => `
+    <li class="sev-${f.severity}">
+      <div class="finding-head">
+        <h3>${escapeHtml(f.title)}</h3>
+        <span class="sev-tag">${escapeHtml(f.severity)}</span>
+        <span class="points">+${f.countedPoints}${f.countedPoints !== f.points ? ` <span class="muted">of ${f.points}, category capped</span>` : ""}</span>
+      </div>
+      <p class="finding-detail">${escapeHtml(f.detail)}</p>
+      ${f.evidence.length ? `<ul class="evidence">${f.evidence.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : ""}
+      <p class="why"><b>Why it matters.</b> ${escapeHtml(f.why)}</p>
+    </li>`).join("") + `</ul>`;
+}
+
+function renderReport(result, meta, previewHtml, removedTags) {
+  const facts = result.sender;
+  const linkRows = result.urls.map((u) => `
+    <tr>
+      <td class="mono">${escapeHtml(u.url)}</td>
+      <td>${escapeHtml(u.text)}</td>
+      <td class="mono">${escapeHtml(u.registrable)}</td>
+      <td class="mono">${escapeHtml(u.scheme)}</td>
+    </tr>`).join("");
+
+  const attachmentRows = result.attachments.map((a) => `
+    <tr>
+      <td class="mono">${escapeHtml(a.filename)}</td>
+      <td class="mono">${escapeHtml(a.contentType)}</td>
+      <td class="num">${escapeHtml(a.size)}</td>
+      <td>${a.risky ? '<span class="band-tag band-critical">flagged</span>' : '<span class="muted">—</span>'}</td>
+      <td class="mono">${escapeHtml(a.sha256.slice(0, 16))}…</td>
+    </tr>`).join("");
+
+  const breakdownRows = result.categories.map((c) => `
+    <tr>
+      <td>${escapeHtml(c.label)}</td>
+      <td class="num">${c.findingCount}</td>
+      <td class="num">${c.rawPoints}</td>
+      <td class="num">${c.cap}</td>
+      <td class="num"><b>${c.countedPoints}</b></td>
+    </tr>`).join("");
+
+  return `
+  <div class="verdict band-${result.bandKey}">
+    <div class="verdict-top">
+      <div class="verdict-score">
+        <div class="value">${result.score}<span class="of">/100</span></div>
+        <div class="caption">Risk score, not a probability</div>
+      </div>
+      <div class="verdict-main">
+        <h2>${escapeHtml(result.bandLabel)}</h2>
+        <p>${escapeHtml(result.summary)}</p>
+      </div>
+    </div>
+    <div class="meter">
+      ${meterSvg(result)}
+      <p class="meter-note">Analysed locally · <span class="mono">${escapeHtml(meta.filename)}</span> ·
+         ${meta.sizeLabel} · engine ${escapeHtml(result.metadata.engineVersion)}</p>
+    </div>
+    <div class="action-block">
+      <h3>Recommended action</h3>
+      <p>${escapeHtml(result.recommendedAction)}</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Findings</h3>
+      <span class="note">${result.findings.length} of ${Object.keys(RULES).length} rules matched</span>
+    </div>
+    ${renderFindings(result.findings)}
+  </div>
+
+  <div class="grid grid-2 spaced-lg">
+    <div class="panel">
+      <div class="panel-head"><h3>Sender</h3></div>
+      <dl class="facts">
+        <dt>Display name</dt><dd>${escapeHtml(facts.displayName)}</dd>
+        <dt>Address</dt><dd>${escapeHtml(facts.address)}</dd>
+        <dt>Domain</dt><dd>${escapeHtml(facts.domain)}</dd>
+        <dt>Reply-To</dt><dd>${escapeHtml(facts.replyTo || "(same as sender)")}</dd>
+        <dt>Return-Path</dt><dd>${escapeHtml(facts.returnPath || "(not set)")}</dd>
+        <dt>To</dt><dd>${escapeHtml(facts.to)}</dd>
+        <dt>Subject</dt><dd>${escapeHtml(facts.subject)}</dd>
+        <dt>Date</dt><dd>${escapeHtml(facts.date)}</dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Authentication</h3></div>
+      ${result.authentication.map((row) => `
+        <div class="auth-row">
+          <span class="check">${escapeHtml(row.check)}</span>
+          <span class="tag ${VERDICT_CLASS[row.verdict] || "verdict-none"}">${escapeHtml(row.verdict)}</span>
+          <span class="meaning">${escapeHtml(row.meaning)}</span>
+        </div>`).join("")}
+      <p class="preview-note spaced">These verdicts were written by the receiving mail
+        server, not verified here. A pass does not make a message safe, and a failure is not proof of forgery —
+        forwarding and mailing lists break authentication routinely.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Links</h3>
+      <span class="note">${result.urls.length} found · none were opened</span>
+    </div>
+    ${result.urls.length ? `<div class="table-scroll"><table>
+        <caption>Destinations are shown as text. EmailShield never requests a URL found in a message.</caption>
+        <thead><tr><th>Destination</th><th>Visible text</th><th>Real domain</th><th>Scheme</th></tr></thead>
+        <tbody>${linkRows}</tbody></table></div>`
+      : `<p class="muted">No links were found in this message.</p>`}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Attachments</h3>
+      <span class="note">${result.attachments.length} found</span>
+    </div>
+    ${result.attachments.length ? `<div class="table-scroll"><table>
+        <thead><tr><th>Filename</th><th>Declared type</th><th>Size</th><th>Assessment</th><th>SHA-256</th></tr></thead>
+        <tbody>${attachmentRows}</tbody></table></div>`
+      : `<p class="muted">This message has no attachments.</p>`}
+    <p class="preview-note spaced-sm">Malware scanning: ${escapeHtml(result.metadata.malwareScanning)}.
+      Threat intelligence: ${escapeHtml(result.metadata.threatIntelligence)}. Attachments were hashed and
+      classified by declared type — none was opened, extracted or executed.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Safe preview</h3>
+      <span class="note">inert copy of the message body</span>
+    </div>
+    <p class="preview-note">Scripts, styles, forms and images have been removed and links are not
+      clickable — the destination of each is printed beside it instead. The frame below is sandboxed
+      with an opaque origin${removedTags.length ? `. Removed: <span class="mono">${escapeHtml(removedTags.join(", "))}</span>` : ""}.</p>
+    <iframe class="preview-frame" sandbox="" referrerpolicy="no-referrer"
+            title="Sanitised message body" srcdoc="${escapeHtml(buildPreviewDocument(previewHtml))}"></iframe>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>How this score was calculated</h3>
+      <span class="note">nothing is hidden</span>
+    </div>
+    <div class="table-scroll"><table>
+      <caption>Each category is capped, so no single kind of evidence can carry the whole score.</caption>
+      <thead><tr><th>Category</th><th>Findings</th><th>Raw</th><th>Cap</th><th>Counted</th></tr></thead>
+      <tbody>${breakdownRows}
+        <tr><td><b>Total</b></td><td class="num">${result.findings.length}</td><td></td>
+            <td class="num">${MAX_SCORE}</td><td class="num"><b>${result.score}</b></td></tr>
+      </tbody></table></div>
+    <details class="raw">
+      <summary>Show message headers (${result.headers.length})</summary>
+      <div class="table-scroll"><table><tbody>
+        ${result.headers.map(([name, value]) => `
+          <tr><th scope="row" class="nowrap">${escapeHtml(name)}</th>
+              <td class="mono">${escapeHtml(value.slice(0, 500))}</td></tr>`).join("")}
+      </tbody></table></div>
+    </details>
+  </div>`;
+}
+
+/* ===========================================================================
+   Interaction
+   ======================================================================== */
+
+const ORGANIZATION_DOMAIN = "example.com";
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("file-input");
+const chosen = document.getElementById("chosen");
+const reportSlot = document.getElementById("report");
+const errorSlot = document.getElementById("error-slot");
+const sampleRow = document.getElementById("sample-row");
+const historyPanel = document.getElementById("history-panel");
+const historyList = document.getElementById("history-list");
+
+let history = [];
+
+function showError(message) {
+  errorSlot.innerHTML = `<div class="alert" role="alert"><p>${escapeHtml(message)}</p></div>`;
+}
+function clearError() { errorSlot.innerHTML = ""; }
+
+async function analyseBytes(bytes, filename) {
+  clearError();
+
+  if (!bytes.length) { showError("That file is empty."); return; }
+  if (bytes.length > MAX_UPLOAD_BYTES) {
+    showError("That file is larger than 10 MB. Saved email messages are rarely this big.");
+    return;
+  }
+  if (!looksLikeEmail(bytes)) {
+    showError("That doesn't look like a saved email message. Export the message as .eml from your mail client and try again.");
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = await parseEmail(bytes);
+  } catch (err) {
+    showError("We couldn't read this file as an email. Check that it's a valid .eml export and try again.");
+    return;
+  }
+
+  let result;
+  try {
+    result = analyseEmail(parsed, { organizationDomain: ORGANIZATION_DOMAIN });
+  } catch (err) {
+    showError("Something went wrong while analysing this message.");
+    return;
+  }
+
+  const sanitised = sanitizeHtml(parsed.htmlBody);
+  const previewHtml = sanitised.html || textToHtml(parsed.textBody);
+
+  reportSlot.innerHTML = renderReport(
+    result,
+    { filename, sizeLabel: humanSize(bytes.length) },
+    previewHtml,
+    sanitised.dropped
+  );
+  reportSlot.classList.add("is-visible");
+  reportSlot.focus({ preventScroll: true });
+  reportSlot.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  recordHistory({
+    filename,
+    score: result.score,
+    bandKey: result.bandKey,
+    bandLabel: result.bandLabel,
+    when: new Date().toISOString(),
+  });
+}
+
+function handleFile(file) {
+  chosen.textContent = "";
+  const label = document.createElement("span");
+  label.textContent = "Analysing ";
+  const name = document.createElement("span");
+  name.className = "mono";
+  // textContent, never innerHTML: the filename comes from the user's disk.
+  name.textContent = file.name;
+  chosen.append(label, name);
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    analyseBytes(new Uint8Array(reader.result), file.name);
+    chosen.textContent = "";
+    const done = document.createElement("span");
+    done.textContent = "Analysed ";
+    const shown = document.createElement("span");
+    shown.className = "mono";
+    shown.textContent = file.name;
+    chosen.append(done, shown);
+  };
+  reader.onerror = () => showError("That file could not be read.");
+  reader.readAsArrayBuffer(file);
+}
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files && fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+["dragenter", "dragover"].forEach((name) => {
+  dropzone.addEventListener(name, (event) => {
+    event.preventDefault();
+    dropzone.classList.add("is-over");
+  });
+});
+["dragleave", "drop"].forEach((name) => {
+  dropzone.addEventListener(name, (event) => {
+    event.preventDefault();
+    if (name === "dragleave" && dropzone.contains(event.relatedTarget)) return;
+    dropzone.classList.remove("is-over");
+  });
+});
+dropzone.addEventListener("drop", (event) => {
+  const files = event.dataTransfer && event.dataTransfer.files;
+  if (files && files.length) handleFile(files[0]);
+});
+// A stray drop elsewhere on the page must not navigate away to the file,
+// which would look as though the page had "opened" the email.
+["dragover", "drop"].forEach((name) => {
+  window.addEventListener(name, (event) => {
+    if (!dropzone.contains(event.target)) event.preventDefault();
+  });
+});
+
+/* ------------------------------------------------------------- samples */
+SAMPLE_EMAILS.forEach((sample) => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `sample-btn band-${sample.band}`;
+  const dot = document.createElement("span");
+  dot.className = "dot";
+  const text = document.createElement("span");
+  text.textContent = sample.label;
+  button.append(dot, text);
+  button.addEventListener("click", () => {
+    const bytes = new TextEncoder().encode(sample.raw);
+    chosen.textContent = "";
+    const label = document.createElement("span");
+    label.textContent = "Sample: ";
+    const name = document.createElement("span");
+    name.className = "mono";
+    name.textContent = sample.name;
+    chosen.append(label, name);
+    analyseBytes(bytes, sample.name);
+  });
+  sampleRow.appendChild(button);
+});
+
+/* ------------------------------------------------------------- history */
+/* localStorage is used only as a per-visitor convenience. It is private to
+   this browser, is never shared, and holds no message content — just the
+   filename, score and band. */
+
+function loadHistory() {
+  try {
+    const stored = localStorage.getItem("emailshield:history");
+    history = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(history)) history = [];
+  } catch (err) {
+    history = [];
+  }
+  renderHistory();
+}
+
+function recordHistory(entry) {
+  history.unshift(entry);
+  history = history.slice(0, 12);
+  try {
+    localStorage.setItem("emailshield:history", JSON.stringify(history));
+  } catch (err) { /* private browsing, quota, or storage disabled */ }
+  renderHistory();
+}
+
+function renderHistory() {
+  if (!history.length) { historyPanel.hidden = true; return; }
+  historyPanel.hidden = false;
+  historyList.innerHTML = history.map((entry) => `
+    <div class="history-row band-${entry.bandKey}">
+      <span class="name">${escapeHtml(entry.filename)}</span>
+      <span class="when">${escapeHtml(new Date(entry.when).toLocaleTimeString())}</span>
+      <span class="band-tag">${escapeHtml(entry.bandLabel)}</span>
+      <span class="score">${entry.score}/100</span>
+    </div>`).join("");
+}
+
+document.getElementById("clear-history").addEventListener("click", () => {
+  history = [];
+  try { localStorage.removeItem("emailshield:history"); } catch (err) { /* ignore */ }
+  renderHistory();
+});
+
+loadHistory();
+
+/* --------------------------------------------------------------- theme */
+const themeToggle = document.getElementById("theme-toggle");
+themeToggle.addEventListener("click", () => {
+  const root = document.documentElement;
+  const current = root.getAttribute("data-theme");
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = current ? (current === "dark" ? "light" : "dark") : (prefersDark ? "light" : "dark");
+  root.setAttribute("data-theme", next);
+  try { localStorage.setItem("emailshield:theme", next); } catch (err) { /* ignore */ }
+});
+try {
+  const savedTheme = localStorage.getItem("emailshield:theme");
+  if (savedTheme === "dark" || savedTheme === "light") {
+    document.documentElement.setAttribute("data-theme", savedTheme);
+  }
+} catch (err) { /* ignore */ }
+</script>
+</body>
+</html>
